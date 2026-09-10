@@ -542,12 +542,7 @@ export default new Module('manager', {
       }
 
       const doc = await dbNews.insertOne({
-        tag,
-        title,
-        excerpt,
-        image,
-        author,
-        createdAt: new Date(),
+        tag, title, excerpt, image, author, createdAt: new Date(),
       });
       return { success: true, id: String(doc._id) };
     },
