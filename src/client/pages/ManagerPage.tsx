@@ -615,6 +615,17 @@ export default function ManagerPage() {
     if (!displayName && activeUser) setDisplayName(activeUser.username);
   }, [activeUser, displayName]);
 
+  useEffect(() => {
+    const serverTeamAbbr = (managerProfile as any)?.teamAbbr as string | undefined;
+    if (myTeam || !serverTeamAbbr) return;
+    const serverTeam = teamOptions.find(team => team.abbr === serverTeamAbbr);
+    if (!serverTeam) return;
+    setMyTeam(serverTeam);
+    setPickedAbbr(serverTeam.abbr);
+    setTeamIndex(teamOptions.findIndex(team => team.abbr === serverTeam.abbr));
+    localStorage.setItem(STORAGE_KEYS.team, JSON.stringify(serverTeam.abbr));
+  }, [managerProfile, myTeam, teamOptions]);
+
   // שמירה אוטומטית בכל שינוי
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.budget, String(budget)); }, [budget]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.squad, JSON.stringify(squad)); }, [squad]);
