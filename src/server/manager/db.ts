@@ -74,7 +74,14 @@ export const dbMatchResults = new Store('matchResults', {
 // MongoClient to get a raw MongoDB collection by name.
 
 export function rawCol(name: string) {
-  const db = (dbManagers as any).getDatabase() as import('mongodb').Db;
+  // Try getDatabase() first (Modelence Store public API)
+  // Fall back to rawCollection().db (also valid per Modelence source)
+  let db: import('mongodb').Db;
+  if (typeof (dbManagers as any).getDatabase === 'function') {
+    db = (dbManagers as any).getDatabase() as import('mongodb').Db;
+  } else {
+    db = (dbManagers as any).rawCollection().db as import('mongodb').Db;
+  }
   return db.collection(name);
 }
 
