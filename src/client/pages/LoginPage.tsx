@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { getConfig, loginWithPassword } from 'modelence/client';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/client/components/ui/Button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/client/components/ui/Card';
 import { Input } from '@/client/components/ui/Input';
@@ -18,6 +19,7 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
+  const [showPassword, setShowPassword] = useState(false);
   const isSandboxEnv = getConfig('_system.env.type') === 'sandbox';
   const defaultDemoEmail = isSandboxEnv ? getConfig('example.modelenceDemoUsername') as string | undefined : undefined;
   const defaultDemoPassword = isSandboxEnv ? getConfig('example.modelenceDemoPassword') as string | undefined : undefined;
@@ -67,13 +69,24 @@ function LoginForm() {
                 Forgot your password?
               </Link> */}
             </div>
-            <Input 
-              type="password" 
-              name="password" 
-              id="password" 
-              defaultValue={defaultDemoPassword}
-              required
-            />
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                id="password"
+                defaultValue={defaultDemoPassword}
+                className="pr-11"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(value => !value)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-900"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <Button
