@@ -22,5 +22,10 @@ startApp({
       description: 'Provision managerNews, managerEvents, managerFriends, managerChallenges collections',
       handler: provisionNewsCollection,
     },
+    {
+      version: 3,
+      description: 'Re-provision all manager collections (retry after getDatabase fix)',
+      handler: provisionNewsCollection,
+    },
   ],
 });
