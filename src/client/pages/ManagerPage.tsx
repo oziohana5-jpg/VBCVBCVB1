@@ -497,7 +497,7 @@ export default function ManagerPage() {
   const [gameSpeed, setGameSpeed]    = useState(1.5);
   const [liveSpeed, setLiveSpeed]    = useState(1);
   const [aiMatch, setAiMatch]         = useState(true);
-  const { data: managerProfile, refetch: refetchManager } = useQuery({
+  const { data: managerProfile, isLoading: managerProfileLoading, refetch: refetchManager } = useQuery({
     ...modelenceQuery('manager.getManager'),
     enabled: !!sessionUser,
     retry: 0,
@@ -514,7 +514,21 @@ export default function ManagerPage() {
   const createManagerMutation = useMutation({
     ...modelenceMutation('manager.createManager'),
     onSuccess: () => { void refetchManager(); },
-    onError: (error: any) => showToast(error?.message ?? 'לא ניתן ליצור את המשתמש'),
+    onError: async (error: any) => {
+      if (!String(error?.message ?? '').toLowerCase().includes('manager already exists')) {
+        showToast(error?.message ?? 'לא ניתן ליצור את המשתמש');
+        return;
+      }
+      const result = await refetchManager();
+      const existingTeamAbbr = (result.data as any)?.teamAbbr as string | undefined;
+      const existingTeam = teamOptions.find(team => team.abbr === existingTeamAbbr);
+      if (existingTeam) {
+        setMyTeam(existingTeam);
+        setPickedAbbr(existingTeam.abbr);
+        setTeamIndex(teamOptions.findIndex(team => team.abbr === existingTeam.abbr));
+        localStorage.setItem(STORAGE_KEYS.team, JSON.stringify(existingTeam.abbr));
+      }
+    },
   });
   const discordCallbackStarted = useRef(false);
 
@@ -1215,6 +1229,13 @@ export default function ManagerPage() {
   }
 
   if (!myTeam) {
+    if (sessionUser && managerProfileLoading) {
+      return (
+        <div className="min-h-screen bg-[#070b10] flex items-center justify-center p-6" dir="rtl">
+          <div className="text-center text-[#c6ff2e]">טוען את המשתמש שלך...</div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-[#070b10] flex flex-col items-center justify-center p-6" dir="rtl">
         <div className="w-full max-w-4xl rounded-[22px] border border-[#1a2635] bg-[#0c1219] p-6 md:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
