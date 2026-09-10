@@ -67,27 +67,24 @@ export const dbMatchResults = new Store('matchResults', {
   ]
 });
 
-// ─── Collections that use rawCollection() directly ─────────────────────────
-// These are NOT separate Store objects to avoid "Store collision" errors in
-// Modelence when multiple Stores share a collection name.
-// Instead, we expose a helper that uses dbManagers' already-provisioned
-// MongoClient to get a raw MongoDB collection by name.
+// ─── Raw MongoDB collections via the managers Store's live client ────────────
+// We DON'T create separate Modelence Stores for these collections because new
+// Stores fail with "not provisioned" on Render until the first write.
+// Instead we grab dbManagers' underlying Collection object and call .db on it
+// to get the Db, then open any collection name we want. MongoDB creates the
+// collection automatically on the first write — no provisioning needed.
 
 export function rawCol(name: string) {
-  // Try getDatabase() first (Modelence Store public API)
-  // Fall back to rawCollection().db (also valid per Modelence source)
-  let db: import('mongodb').Db;
-  if (typeof (dbManagers as any).getDatabase === 'function') {
-    db = (dbManagers as any).getDatabase() as import('mongodb').Db;
-  } else {
-    db = (dbManagers as any).rawCollection().db as import('mongodb').Db;
-  }
-  return db.collection(name);
+  // dbManagers is always provisioned (it's the first/original Store).
+  // rawCollection() returns the underlying mongodb.Collection object.
+  // That object has a .db property (the mongodb.Db) we can reuse.
+  const managersCol = (dbManagers as any).rawCollection() as import('mongodb').Collection;
+  return managersCol.db.collection(name);
 }
 
-// Thin typed wrappers so callers don't need to import mongodb directly:
-export const dbNews        = { _col: () => rawCol('managerNews') };
-export const dbEvents      = { _col: () => rawCol('managerEvents') };
-export const dbEventProgress = { _col: () => rawCol('managerEventProgress') };
-export const dbFriends     = { _col: () => rawCol('managerFriends') };
-export const dbChallenges  = { _col: () => rawCol('managerChallenges') };
+// Thin typed wrappers — callers use ._col() so the collection is resolved lazily
+export const dbNews           = { _col: () => rawCol('managerNews') };
+export const dbEvents         = { _col: () => rawCol('managerEvents') };
+export const dbEventProgress  = { _col: () => rawCol('managerEventProgress') };
+export const dbFriends        = { _col: () => rawCol('managerFriends') };
+export const dbChallenges     = { _col: () => rawCol('managerChallenges') };
