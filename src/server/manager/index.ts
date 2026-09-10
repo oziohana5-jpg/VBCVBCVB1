@@ -565,16 +565,17 @@ export default new Module('manager', {
     },
 
     // ── EVENTS (admin) ──────────────────────────────────────────────────
-    createEvent: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
-      const { title, description, type, target, reward, expiresAt } = z.object({
+    createEvent: async (args: unknown) => {
+      const { title, description, type, target, reward, expiresAt, author } = z.object({
         title: z.string().min(1),
         description: z.string().min(1),
         type: z.enum(['win_streak', 'goals', 'matches']),
         target: z.number().min(1),
         reward: z.number().min(0),
         expiresAt: z.string(),
+        author: z.string(),
       }).parse(args);
+      if (author.trim().toLowerCase() !== 'knafe3') throw new Error('Unauthorized');
       try {
         const col = await dbEvents._col();
         const doc = await col.insertOne({
@@ -585,9 +586,9 @@ export default new Module('manager', {
       } catch { return { success: false, id: '' }; }
     },
 
-    deleteEvent: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
-      const { id } = z.object({ id: z.string() }).parse(args);
+    deleteEvent: async (args: unknown) => {
+      const { id, author } = z.object({ id: z.string(), author: z.string() }).parse(args);
+      if (author.trim().toLowerCase() !== 'knafe3') throw new Error('Unauthorized');
       try {
         await (await dbEvents._col()).updateOne(
           { _id: new ObjectId(id) },

@@ -1610,7 +1610,7 @@ export default function ManagerPage() {
                     <input type="datetime-local" value={eventDraft.expiresAt} onChange={e => setEventDraft(d => ({ ...d, expiresAt: e.target.value }))}
                       className="rounded-xl border border-[#24466d] bg-[#071821] px-4 py-3 text-sm text-white outline-none focus:border-[#c6ff2e]" />
                   </div>
-                  <button type="button" onClick={() => createEventMutation.mutate({ ...eventDraft, expiresAt: eventDraft.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString() })}
+                  <button type="button" onClick={() => createEventMutation.mutate({ ...eventDraft, expiresAt: eventDraft.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString(), author: discordUser?.username ?? '' })}
                     className="mt-4 rounded-xl bg-[#c6ff2e] px-5 py-2.5 font-heading text-sm font-bold text-[#070b10] transition hover:-translate-y-0.5">
                     צור אירוע
                   </button>
@@ -1646,7 +1646,7 @@ export default function ManagerPage() {
                         פג תוקף: {new Date(ev.expiresAt).toLocaleDateString('he-IL')}
                       </p>
                       {isNewsAdmin && (
-                        <button type="button" onClick={() => deleteEventMutation.mutate({ id: ev.id })}
+                        <button type="button" onClick={() => deleteEventMutation.mutate({ id: ev.id, author: discordUser?.username ?? '' })}
                           className="mt-3 flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300">
                           <Trash2 size={12} /> מחק
                         </button>
