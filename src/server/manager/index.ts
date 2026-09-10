@@ -225,13 +225,27 @@ export default new Module('manager', {
         const rows = await dbFriends.fetch({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
         } as any);
+        // Load manager records for online status + teamAbbr
+        const otherIds = rows.map(r => {
+          const isSender = String(r.fromUserId) === user.id;
+          return isSender ? String(r.toUserId) : String(r.fromUserId);
+        });
+        const managerRecords = otherIds.length > 0
+          ? await dbManagers.fetch({ userId: { $in: otherIds.map(id => new ObjectId(id)) } } as any)
+          : [];
+        const managerMap = new Map(managerRecords.map(m => [String(m.userId), m]));
+        const onlineThreshold = new Date(Date.now() - 3 * 60 * 1000); // 3 minutes
         return rows.map(r => {
           const isSender = String(r.fromUserId) === user.id;
+          const friendUserId = isSender ? String(r.toUserId) : String(r.fromUserId);
+          const mgr = managerMap.get(friendUserId);
           return {
             id: String(r._id),
-            userId: isSender ? String(r.toUserId) : String(r.fromUserId),
+            userId: friendUserId,
             username: isSender ? r.toUsername : r.fromUsername,
             avatar: isSender ? r.toAvatar : r.fromAvatar,
+            teamAbbr: mgr?.teamAbbr ?? '',
+            isOnline: mgr?.lastSeen ? new Date(mgr.lastSeen) > onlineThreshold : false,
             status: r.status,
             direction: isSender ? 'sent' : 'received',
           };
@@ -674,6 +688,18 @@ export default new Module('manager', {
         await dbChallenges.updateOne({ _id: new ObjectId(id) }, { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } });
         return { success: true, winnerId };
       } catch { return { success: true, winnerId: '' }; }
+    },
+
+    // עדכון lastSeen לסטטוס אונליין — קרא אותו כל 90 שניות מהקליינט
+    pingOnline: async (_args: unknown, { user }: { user: UserInfo | null }) => {
+      if (!user) return { success: false };
+      try {
+        await dbManagers.updateOne(
+          { userId: new ObjectId(user.id) },
+          { $set: { lastSeen: new Date() } }
+        );
+      } catch { /* ignore if not provisioned */ }
+      return { success: true };
     },
   },
 });

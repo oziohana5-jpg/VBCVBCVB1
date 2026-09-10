@@ -678,7 +678,16 @@ export default function ManagerPage() {
 
   const respondChallengeMutation = useMutation({
     ...modelenceMutation('manager.respondChallenge'),
-    onSuccess: () => { void refetchChallenges(); },
+    onSuccess: () => { void refetchChallenges(); void refetchFriends(); },
+  });
+
+  const submitChallengeResultMutation = useMutation({
+    ...modelenceMutation('manager.submitChallengeResult'),
+    onSuccess: () => { void refetchChallenges(); showToast('תוצאה נשמרה!'); },
+  });
+
+  const pingOnlineMutation = useMutation({
+    ...modelenceMutation('manager.pingOnline'),
   });
 
   const { data: challenges = [], refetch: refetchChallenges } = useQuery({
@@ -686,7 +695,17 @@ export default function ManagerPage() {
     staleTime: 20_000,
     enabled: !!discordUser,
     retry: 0,
+    refetchInterval: 30_000,
   });
+
+  // ping online every 90s
+  useEffect(() => {
+    if (!discordUser) return;
+    pingOnlineMutation.mutate({});
+    const interval = setInterval(() => { pingOnlineMutation.mutate({}); }, 90_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discordUser]);
 
   // friends search
   const [friendSearch, setFriendSearch] = useState('');
@@ -755,6 +774,17 @@ export default function ManagerPage() {
         awayScore: liveHud.awayScore,
         date: new Date().toLocaleDateString('he-IL'),
       }, ...previous.slice(0, 9)]);
+    }
+
+    // Submit 1v1 challenge result if active
+    const activeChalId = (window as any).__activeChallengeId as string | undefined;
+    if (activeChalId) {
+      submitChallengeResultMutation.mutate({
+        id: activeChalId,
+        myScore: liveHud.homeScore,
+        opponentScore: liveHud.awayScore,
+      });
+      (window as any).__activeChallengeId = undefined;
     }
 
     setBudget(value => value + reward);
@@ -947,6 +977,20 @@ export default function ManagerPage() {
     setTab('match');
     handleStartLiveMatch(true);
   }, [handleStartLiveMatch]);
+
+  const handleStartChallengeMatch = useCallback((challengeId: string, opponentTeamAbbr: string) => {
+    if (!myTeam) return;
+    const opponent = TEAMS.find(t => t.abbr === opponentTeamAbbr) ?? TEAMS[0];
+    setLiveOpponent(opponent);
+    setAiMatch(false);
+    setLiveStarted(true);
+    setLiveKey(k => k + 1);
+    setTab('match');
+    // after match ends, submitChallengeResult will be called by the match-end handler
+    liveRewardedKey.current = -1;
+    // store challengeId for result submission
+    (window as any).__activeChallengeId = challengeId;
+  }, [myTeam]);
 
   useEffect(() => {
     if (!myTeam || !liveStarted || !canvasRef.current || !liveOpponent) return;
@@ -1647,45 +1691,69 @@ export default function ManagerPage() {
                     </div>
                     {(searchResults as any[]).length > 0 && (
                       <div className="mt-3 space-y-2">
-                        {(searchResults as any[]).map((u: any) => (
-                          <div key={u.userId} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
-                            <div className="flex items-center gap-3">
-                              {u.avatar ? <img src={u.avatar} className="h-8 w-8 rounded-full" alt="" /> : <div className="h-8 w-8 rounded-full bg-[#1e7ef2] flex items-center justify-center text-xs font-bold text-white">{u.username[0]}</div>}
-                              <div>
-                                <div className="text-sm font-bold text-white">{u.username}</div>
-                                <div className="text-xs text-[#5d738c]">{u.teamAbbr}</div>
+                        {(searchResults as any[]).map((u: any) => {
+                          const alreadyFriend = (friends as any[]).some(f =>
+                            f.userId === u.userId && (f.status === 'accepted' || f.status === 'pending')
+                          );
+                          return (
+                            <div key={u.userId} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
+                              <div className="flex items-center gap-3">
+                                {u.avatar
+                                  ? <img src={u.avatar} className="h-8 w-8 rounded-full" alt="" />
+                                  : <div className="h-8 w-8 rounded-full bg-[#1e7ef2] flex items-center justify-center text-xs font-bold text-white">{u.username[0]}</div>}
+                                <div>
+                                  <div className="text-sm font-bold text-white">{u.username}</div>
+                                  <div className="text-xs text-[#5d738c]">{u.teamAbbr}</div>
+                                </div>
                               </div>
+                              {alreadyFriend ? (
+                                <span className="rounded-lg border border-[#1d2f44] px-3 py-1.5 text-xs text-[#5d738c]">כבר חבר</span>
+                              ) : (
+                                <button type="button"
+                                  onClick={() => sendFriendMutation.mutate({ toUserId: u.userId })}
+                                  disabled={sendFriendMutation.isPending}
+                                  className="rounded-lg bg-[#1e7ef2] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a9ef3] disabled:opacity-50">
+                                  + הוסף
+                                </button>
+                              )}
                             </div>
-                            <button type="button" onClick={() => sendFriendMutation.mutate({ toUserId: u.userId })}
-                              className="rounded-lg bg-[#1e7ef2] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a9ef3]">
-                              + הוסף
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
 
-                  {/* Pending requests */}
+                  {/* Pending incoming requests */}
                   {(friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending').length > 0 && (
                     <div className="rounded-2xl border border-amber-500/30 bg-[#0c1219] p-5">
                       <h2 className="mb-3 font-heading text-lg text-white flex items-center gap-2">
-                        <Inbox size={16} className="text-amber-400" /> בקשות ממתינות
+                        <Inbox size={16} className="text-amber-400" />
+                        בקשות חברות ממתינות
+                        <span className="ml-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-[#070b10]">
+                          {(friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending').length}
+                        </span>
                       </h2>
                       <div className="space-y-2">
                         {(friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending').map((f: any) => (
-                          <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
+                          <div key={f.id} className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-[#071821] px-4 py-2.5">
                             <div className="flex items-center gap-3">
-                              {f.avatar ? <img src={f.avatar} className="h-8 w-8 rounded-full" alt="" /> : <div className="h-8 w-8 rounded-full bg-amber-500 flex items-center justify-center text-xs font-bold text-[#070b10]">{f.username[0]}</div>}
-                              <span className="text-sm font-bold text-white">{f.username}</span>
+                              {f.avatar
+                                ? <img src={f.avatar} className="h-9 w-9 rounded-full border-2 border-amber-500/40" alt="" />
+                                : <div className="h-9 w-9 rounded-full bg-amber-500 flex items-center justify-center text-xs font-bold text-[#070b10]">{f.username[0]}</div>}
+                              <div>
+                                <div className="text-sm font-bold text-white">{f.username}</div>
+                                {f.teamAbbr && <div className="text-xs text-[#5d738c]">{f.teamAbbr}</div>}
+                              </div>
                             </div>
                             <div className="flex gap-2">
-                              <button type="button" onClick={() => acceptFriendMutation.mutate({ id: f.id })}
-                                className="rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10]">
-                                <Check size={13} />
+                              <button type="button"
+                                onClick={() => acceptFriendMutation.mutate({ id: f.id })}
+                                className="flex items-center gap-1 rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:bg-[#d4ff5a]">
+                                <Check size={13} /> אשר
                               </button>
-                              <button type="button" onClick={() => removeFriendMutation.mutate({ id: f.id })}
-                                className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10">
+                              <button type="button"
+                                onClick={() => removeFriendMutation.mutate({ id: f.id })}
+                                className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 transition">
                                 <X size={13} />
                               </button>
                             </div>
@@ -1695,10 +1763,36 @@ export default function ManagerPage() {
                     </div>
                   )}
 
+                  {/* Sent pending requests */}
+                  {(friends as any[]).filter((f: any) => f.direction === 'sent' && f.status === 'pending').length > 0 && (
+                    <div className="rounded-2xl border border-[#1d2f44] bg-[#0c1219] p-5">
+                      <h2 className="mb-3 font-heading text-sm text-[#5d738c] flex items-center gap-2">
+                        <UserPlus size={14} /> בקשות שנשלחו
+                      </h2>
+                      <div className="space-y-2">
+                        {(friends as any[]).filter((f: any) => f.direction === 'sent' && f.status === 'pending').map((f: any) => (
+                          <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
+                            <div className="flex items-center gap-3">
+                              {f.avatar
+                                ? <img src={f.avatar} className="h-7 w-7 rounded-full opacity-70" alt="" />
+                                : <div className="h-7 w-7 rounded-full bg-[#1d2f44] flex items-center justify-center text-xs text-[#5d738c]">{f.username[0]}</div>}
+                              <span className="text-sm text-[#9ab7d7]">{f.username}</span>
+                            </div>
+                            <span className="text-xs text-[#5d738c] italic">ממתין לאישור...</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Friends list */}
                   <div className="rounded-2xl border border-[#1d3a5c] bg-[#0c1219] p-5">
                     <h2 className="mb-3 font-heading text-lg text-white flex items-center gap-2">
-                      <Users size={16} className="text-[#c6ff2e]" /> החברים שלי ({(friends as any[]).filter((f: any) => f.status === 'accepted').length})
+                      <Users size={16} className="text-[#c6ff2e]" />
+                      החברים שלי
+                      <span className="text-[#5d738c] text-sm font-normal">
+                        ({(friends as any[]).filter((f: any) => f.status === 'accepted').length})
+                      </span>
                     </h2>
                     {(friends as any[]).filter((f: any) => f.status === 'accepted').length === 0 ? (
                       <p className="text-sm text-[#5d738c] text-center py-4">עדיין אין חברים. חפש שחקנים למעלה!</p>
@@ -1707,18 +1801,32 @@ export default function ManagerPage() {
                         {(friends as any[]).filter((f: any) => f.status === 'accepted').map((f: any) => (
                           <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-3">
                             <div className="flex items-center gap-3">
-                              {f.avatar ? <img src={f.avatar} className="h-9 w-9 rounded-full" alt="" /> : <div className="h-9 w-9 rounded-full bg-[#1e7ef2] flex items-center justify-center text-sm font-bold text-white">{f.username[0]}</div>}
+                              <div className="relative">
+                                {f.avatar
+                                  ? <img src={f.avatar} className="h-9 w-9 rounded-full" alt="" />
+                                  : <div className="h-9 w-9 rounded-full bg-[#1e7ef2] flex items-center justify-center text-sm font-bold text-white">{f.username[0]}</div>}
+                                {/* Online dot */}
+                                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#071821] ${f.isOnline ? 'bg-emerald-400' : 'bg-[#3a4a5c]'}`} title={f.isOnline ? 'אונליין' : 'אופליין'} />
+                              </div>
                               <div>
                                 <div className="font-bold text-white text-sm">{f.username}</div>
+                                <div className="flex items-center gap-1.5">
+                                  {f.teamAbbr && <span className="text-xs text-[#5d738c]">{f.teamAbbr}</span>}
+                                  <span className={`text-[10px] font-bold uppercase tracking-wider ${f.isOnline ? 'text-emerald-400' : 'text-[#3a4a5c]'}`}>
+                                    {f.isOnline ? '● אונליין' : '○ אופליין'}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
                               <button type="button"
                                 onClick={() => sendChallengeMutation.mutate({ toUserId: f.userId })}
-                                className="flex items-center gap-1.5 rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:-translate-y-0.5">
+                                disabled={sendChallengeMutation.isPending}
+                                className="flex items-center gap-1.5 rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:-translate-y-0.5 disabled:opacity-50">
                                 <Swords size={13} /> אתגר 1v1
                               </button>
-                              <button type="button" onClick={() => removeFriendMutation.mutate({ id: f.id })}
+                              <button type="button"
+                                onClick={() => removeFriendMutation.mutate({ id: f.id })}
                                 className="rounded-lg border border-[#26384b] px-2 py-1.5 text-xs text-[#5d738c] hover:text-rose-400 transition">
                                 <X size={13} />
                               </button>
@@ -1739,7 +1847,9 @@ export default function ManagerPage() {
                         {(challenges as any[]).map((c: any) => {
                           const isFrom = c.fromUserId === discordUser?.id;
                           const opponent = isFrom ? c.toUsername : c.fromUsername;
+                          const opponentTeamAbbr = isFrom ? c.toTeamAbbr : c.fromTeamAbbr;
                           const isPending = c.status === 'pending';
+                          const isAccepted = c.status === 'accepted';
                           const isIncoming = isPending && !isFrom;
                           return (
                             <div key={c.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-3">
@@ -1748,25 +1858,30 @@ export default function ManagerPage() {
                                   {isFrom ? `אתגרת את ${opponent}` : `${opponent} אתגר אותך`}
                                 </div>
                                 <div className="text-xs text-[#5d738c]">
-                                  {c.fromTeamAbbr} vs {c.toTeamAbbr} · {isPending ? 'ממתין' : 'הוקבל'}
+                                  {c.fromTeamAbbr} vs {c.toTeamAbbr} · {isPending ? '⏳ ממתין לאישור' : isAccepted ? '✅ התקבל' : c.status}
                                 </div>
                               </div>
                               {isIncoming && (
                                 <div className="flex gap-2">
-                                  <button type="button" onClick={() => respondChallengeMutation.mutate({ id: c.id, accept: true })}
-                                    className="rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10]">
+                                  <button type="button"
+                                    onClick={() => respondChallengeMutation.mutate({ id: c.id, accept: true })}
+                                    className="rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:bg-[#d4ff5a]">
                                     קבל
                                   </button>
-                                  <button type="button" onClick={() => respondChallengeMutation.mutate({ id: c.id, accept: false })}
-                                    className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400">
+                                  <button type="button"
+                                    onClick={() => respondChallengeMutation.mutate({ id: c.id, accept: false })}
+                                    className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400 transition hover:bg-rose-500/10">
                                     סרב
                                   </button>
                                 </div>
                               )}
-                              {!isPending && c.status === 'accepted' && (
-                                <span className="rounded-full bg-[#c6ff2e]/10 border border-[#c6ff2e]/40 px-3 py-1 text-xs font-bold text-[#c6ff2e]">
-                                  🎮 שחק עכשיו
-                                </span>
+                              {isAccepted && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartChallengeMatch(c.id, opponentTeamAbbr)}
+                                  className="flex items-center gap-1.5 rounded-full bg-[#c6ff2e] px-4 py-1.5 text-xs font-bold text-[#070b10] transition hover:scale-105 hover:bg-[#d4ff5a] animate-pulse">
+                                  🎮 שחק עכשיו!
+                                </button>
                               )}
                             </div>
                           );

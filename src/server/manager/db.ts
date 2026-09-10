@@ -15,10 +15,12 @@ export const dbManagers = new Store('managers', {
     goalsFor: schema.number(),
     goalsAgainst: schema.number(),
     createdAt: schema.date(),
+    lastSeen: schema.date(),         // לסטטוס אונליין/אופליין
   },
   indexes: [
     { key: { userId: 1 }, unique: true },
     { key: { discordId: 1 }, unique: true },
+    { key: { lastSeen: -1 } },
   ]
 });
 
