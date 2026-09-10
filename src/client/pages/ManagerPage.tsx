@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { modelenceMutation, modelenceQuery } from '@modelence/react-query';
+import { useSession } from 'modelence/client';
 // Logo hosted on Discord CDN
 const LOGO_URL = 'https://cdn.discordapp.com/attachments/1544362998410252342/1547265092326793226/Gemini_Generated_Image_ha7o1vha7o1vha7o.png';
 import {
@@ -473,6 +474,7 @@ function TeamBadge({ team, size = 58 }: { team: TeamData; size?: number }) {
 // ────────────────────────────────────────────────
 export default function ManagerPage() {
   const navigate = useNavigate();
+  const { user: sessionUser } = useSession();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameRef = useRef<PitchKickGame | null>(null);
   const liveRewardedKey = useRef(-1);
@@ -489,11 +491,30 @@ export default function ManagerPage() {
     try { const v = localStorage.getItem(STORAGE_KEYS.budget); return v ? Number(v) : 10_000_000; } catch { return 10_000_000; }
   });
   const [discordUser, setDiscordUser] = useState(() => readStoredDiscord());
+  const [displayName, setDisplayName] = useState(() => {
+    try { return localStorage.getItem('fifa-il.pending-display-name') ?? ''; } catch { return ''; }
+  });
   const [gameSpeed, setGameSpeed]    = useState(1.5);
   const [liveSpeed, setLiveSpeed]    = useState(1);
   const [aiMatch, setAiMatch]         = useState(true);
+  const { data: managerProfile, refetch: refetchManager } = useQuery({
+    ...modelenceQuery('manager.getManager'),
+    enabled: !!sessionUser,
+    retry: 0,
+  });
+  const accountUser = sessionUser ? {
+    id: String((sessionUser as any).id),
+    username: managerProfile?.discordUsername || (sessionUser as any).handle || (sessionUser as any).email || 'שחקן',
+    avatar: managerProfile?.discordAvatar || '',
+  } : null;
+  const activeUser = discordUser ?? accountUser;
 
   const discordExchange = useMutation(modelenceMutation('manager.exchangeDiscordCode'));
+  const createManagerMutation = useMutation({
+    ...modelenceMutation('manager.createManager'),
+    onSuccess: () => { void refetchManager(); },
+    onError: (error: any) => showToast(error?.message ?? 'לא ניתן ליצור את המשתמש'),
+  });
   const discordCallbackStarted = useRef(false);
 
   useEffect(() => {
@@ -578,6 +599,10 @@ export default function ManagerPage() {
     setSquad([...squad, ...missingPlayers].slice(0, 11));
   }, [myTeam]);
 
+  useEffect(() => {
+    if (!displayName && activeUser) setDisplayName(activeUser.username);
+  }, [activeUser, displayName]);
+
   // שמירה אוטומטית בכל שינוי
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.budget, String(budget)); }, [budget]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.squad, JSON.stringify(squad)); }, [squad]);
@@ -651,7 +676,7 @@ export default function ManagerPage() {
   const { data: friends = [], refetch: refetchFriends } = useQuery({
     ...modelenceQuery('manager.getFriends'),
     staleTime: 30_000,
-    enabled: !!discordUser,
+    enabled: !!activeUser,
     retry: 0,
   });
 
@@ -693,26 +718,26 @@ export default function ManagerPage() {
   const { data: challenges = [], refetch: refetchChallenges } = useQuery({
     ...modelenceQuery('manager.getChallenges'),
     staleTime: 20_000,
-    enabled: !!discordUser,
+    enabled: !!activeUser,
     retry: 0,
     refetchInterval: 30_000,
   });
 
   // ping online every 90s
   useEffect(() => {
-    if (!discordUser) return;
+    if (!activeUser) return;
     pingOnlineMutation.mutate({});
     const interval = setInterval(() => { pingOnlineMutation.mutate({}); }, 90_000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discordUser]);
+  }, [activeUser]);
 
   // friends search
   const [friendSearch, setFriendSearch] = useState('');
   const [friendsSubTab, setFriendsSubTab] = useState<'list'|'requests'|'search'>('list');
   const { data: searchResults = [] } = useQuery({
     ...modelenceQuery('manager.searchUsers', { query: friendSearch }),
-    enabled: !!discordUser,
+    enabled: !!activeUser,
     staleTime: 10_000,
     retry: 0,
   });
@@ -721,7 +746,7 @@ export default function ManagerPage() {
   const [eventDraftOpen, setEventDraftOpen] = useState(false);
   const [eventDraft, setEventDraft] = useState({ title: '', description: '', type: 'win_streak' as const, target: 5, reward: 500_000, expiresAt: '' });
 
-  const isNewsAdmin = discordUser?.username.trim().toLowerCase() === 'knafe3';
+  const isNewsAdmin = activeUser?.username.trim().toLowerCase() === 'knafe3';
 
   const handlePublishNews = () => {
     const title = newsDraft.title.trim();
@@ -735,13 +760,13 @@ export default function ManagerPage() {
       title,
       excerpt,
       image: newsDraft.image.trim() || 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=1000&q=85',
-      author: discordUser?.username ?? 'knafe3',
+      author: activeUser?.username ?? 'knafe3',
     });
     setNewsDraft({ title: '', tag: 'חדשות', excerpt: '', image: '' });
   };
 
   const handleDeleteNews = (id: string) => {
-    deleteNewsMutation.mutate({ id, author: discordUser?.username ?? '' });
+    deleteNewsMutation.mutate({ id, author: activeUser?.username ?? '' });
   };
 
   /** Skip the live match clock to minute 80 */
@@ -834,11 +859,21 @@ export default function ManagerPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [myTeam, selectedTeam, teamOptions.length]);
 
-  const handleSelectTeam = () => {
+  const handleSelectTeam = async () => {
     const target = selectedTeam ?? teamOptions[0];
     if (!target) return;
+    const name = displayName.trim();
+    if (!name) {
+      showToast('יש לבחור שם משתמש לפני התחלת הקריירה');
+      return;
+    }
 
     const t = ISRAELI_TEAMS.find(team => team.abbr === target.abbr) ?? target;
+    try {
+      await createManagerMutation.mutateAsync({ teamAbbr: t.abbr, displayName: name });
+    } catch {
+      return;
+    }
     setPickedAbbr(target.abbr);
     setMyTeam(t);
     setSquad(previous => {
@@ -1117,7 +1152,7 @@ export default function ManagerPage() {
   });
 
   // ── Team Picker ───────────────────────────────
-  if (!discordUser) {
+  if (!activeUser) {
     return (
       <div className="min-h-screen bg-[#070b10] flex flex-col items-center justify-center p-6" dir="rtl">
         <div className="w-full max-w-3xl rounded-[22px] border border-[#1a2635] bg-[#0c1219] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.45)] text-center">
@@ -1133,17 +1168,23 @@ export default function ManagerPage() {
 
           <div className="mb-4 text-[#5d738c] text-xs uppercase tracking-[0.24em]">FIFA style manager</div>
           <h2 className="font-display text-4xl md:text-5xl text-white text-center mb-4 leading-none">
-            התחבר ל-<span className="text-[#c6ff2e]">Discord</span>
+            התחבר ל-<span className="text-[#c6ff2e]">FIFA IL</span>
           </h2>
           <p className="text-[#5d738c] text-sm md:text-base mb-8">
-            לפני שתבחר קבוצה ותיכנס למשחק, יש להתחבר עם חשבון Discord.
+            התחבר עם מייל וסיסמה כדי לשמור את הקבוצה, החברים וההתקדמות שלך.
           </p>
 
           <button
-            onClick={handleConnectDiscord}
+            onClick={() => navigate('/login?_redirect=%2F')}
             className="px-6 py-3 rounded-full border border-[#2f4d74] bg-[#0c1521] text-white text-sm font-bold hover:border-[#c6ff2e]/70 hover:text-[#c6ff2e] transition-colors"
           >
-            כניסה ל-Discord
+            כניסה עם משתמש קיים
+          </button>
+          <button
+            onClick={() => navigate('/signup?_redirect=%2F')}
+            className="mr-2 px-6 py-3 rounded-full bg-[#c6ff2e] text-[#070b10] text-sm font-bold hover:bg-[#d4ff5a] transition-colors"
+          >
+            יצירת משתמש
           </button>
         </div>
       </div>
@@ -1160,10 +1201,10 @@ export default function ManagerPage() {
             </button>
 
             <div className="flex items-center gap-3 rounded-full border border-[#1d2f44] bg-[#0b1320] px-3 py-2 text-[#dfeaf5]">
-              <img src={discordUser.avatar} alt={discordUser.username} className="h-8 w-8 rounded-full border border-[#1d2f44]" onError={(event) => { event.currentTarget.src = 'https://cdn.discordapp.com/embed/avatars/0.png'; }} />
+              {activeUser.avatar ? <img src={activeUser.avatar} alt={activeUser.username} className="h-8 w-8 rounded-full border border-[#1d2f44]" onError={(event) => { event.currentTarget.src = 'https://cdn.discordapp.com/embed/avatars/0.png'; }} /> : <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1e7ef2] text-sm font-bold text-white">{activeUser.username[0]}</div>}
               <div className="text-right leading-tight">
                 <div className="text-[10px] text-[#5d738c] uppercase tracking-[0.2em]">Discord</div>
-                <div className="text-sm font-bold text-white">{discordUser.username}</div>
+                <div className="text-sm font-bold text-white">{activeUser.username}</div>
               </div>
             </div>
           </div>
@@ -1182,7 +1223,7 @@ export default function ManagerPage() {
             <div className="text-[#5d738c] text-xs uppercase tracking-[0.24em]">FIFA style manager</div>
             <div className="flex items-center gap-2">
               <button onClick={handleConnectDiscord} className="px-3 py-1.5 rounded-full border border-[#1d2f44] bg-[#0b1320] text-[#dfeaf5] text-xs">
-                {discordUser ? `Discord: ${discordUser.username}` : 'התחבר ל-Discord'}
+                {activeUser ? `משתמש: ${activeUser.username}` : 'התחבר'}
               </button>
             </div>
           </div>
@@ -1251,13 +1292,29 @@ export default function ManagerPage() {
             </div>
           </div>
 
+          <div className="mb-5 text-right">
+            <label htmlFor="manager-display-name" className="mb-2 block text-sm font-bold text-white">איך יקראו לך במשחק?</label>
+            <input
+              id="manager-display-name"
+              value={displayName}
+              onChange={event => setDisplayName(event.target.value)}
+              minLength={2}
+              maxLength={24}
+              required
+              placeholder="שם משתמש"
+              className="w-full rounded-lg border border-[#243344] bg-[#071821] px-4 py-3 text-right text-white outline-none transition focus:border-[#c6ff2e]"
+            />
+            <p className="mt-2 text-xs text-[#5d738c]">השם יוצג לחברים וצריך להיות ייחודי.</p>
+          </div>
+
           {pickedAbbr && (
             <button
               onClick={handleSelectTeam}
+              disabled={createManagerMutation.isPending}
               className="w-full py-4 rounded-lg font-heading uppercase tracking-wider text-lg font-bold"
               style={{ background: '#c6ff2e', color: '#070b10' }}
             >
-              התחל קריירה →
+              {createManagerMutation.isPending ? 'יוצר משתמש...' : 'התחל קריירה →'}
             </button>
           )}
         </div>
@@ -1317,13 +1374,13 @@ export default function ManagerPage() {
         </div>
 
         <div className="px-4 py-3 border-b border-[#131c27]">
-          {discordUser ? (
+          {activeUser ? (
             <div className="flex items-center justify-between gap-2 rounded-lg bg-[#070b10] border border-[#1d2f44] p-2.5">
               <div className="flex items-center gap-2 min-w-0">
-                <img src={discordUser.avatar} alt={discordUser.username} className="w-8 h-8 rounded-full border border-[#1d2f44]" onError={(event) => { event.currentTarget.src = 'https://cdn.discordapp.com/embed/avatars/0.png'; }} />
+                {activeUser.avatar ? <img src={activeUser.avatar} alt={activeUser.username} className="w-8 h-8 rounded-full border border-[#1d2f44]" onError={(event) => { event.currentTarget.src = 'https://cdn.discordapp.com/embed/avatars/0.png'; }} /> : <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1e7ef2] text-sm font-bold text-white">{activeUser.username[0]}</div>}
                 <div className="min-w-0">
-                  <p className="text-white text-xs font-bold truncate">{discordUser.username}</p>
-                  <p className="text-[#5d738c] text-[10px]">Discord</p>
+                  <p className="text-white text-xs font-bold truncate">{activeUser.username}</p>
+                  <p className="text-[#5d738c] text-[10px]">FIFA IL</p>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -1611,7 +1668,7 @@ export default function ManagerPage() {
                     <input type="datetime-local" value={eventDraft.expiresAt} onChange={e => setEventDraft(d => ({ ...d, expiresAt: e.target.value }))}
                       className="rounded-xl border border-[#24466d] bg-[#071821] px-4 py-3 text-sm text-white outline-none focus:border-[#c6ff2e]" />
                   </div>
-                  <button type="button" onClick={() => createEventMutation.mutate({ ...eventDraft, expiresAt: eventDraft.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString(), author: discordUser?.username ?? '' })}
+                  <button type="button" onClick={() => createEventMutation.mutate({ ...eventDraft, expiresAt: eventDraft.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString(), author: activeUser?.username ?? '' })}
                     className="mt-4 rounded-xl bg-[#c6ff2e] px-5 py-2.5 font-heading text-sm font-bold text-[#070b10] transition hover:-translate-y-0.5">
                     צור אירוע
                   </button>
@@ -1647,7 +1704,7 @@ export default function ManagerPage() {
                         פג תוקף: {new Date(ev.expiresAt).toLocaleDateString('he-IL')}
                       </p>
                       {isNewsAdmin && (
-                        <button type="button" onClick={() => deleteEventMutation.mutate({ id: ev.id, author: discordUser?.username ?? '' })}
+                        <button type="button" onClick={() => deleteEventMutation.mutate({ id: ev.id, author: activeUser?.username ?? '' })}
                           className="mt-3 flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300">
                           <Trash2 size={12} /> מחק
                         </button>
@@ -1664,7 +1721,7 @@ export default function ManagerPage() {
             const incomingRequests = (friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending');
             const sentRequests     = (friends as any[]).filter((f: any) => f.direction === 'sent'     && f.status === 'pending');
             const acceptedFriends  = (friends as any[]).filter((f: any) => f.status === 'accepted');
-            const pendingChallenges = (challenges as any[]).filter((c: any) => c.status === 'pending' && c.toUserId === discordUser?.id);
+            const pendingChallenges = (challenges as any[]).filter((c: any) => c.status === 'pending' && c.toUserId === activeUser?.id);
             const acceptedChallenges = (challenges as any[]).filter((c: any) => c.status === 'accepted');
 
             // Helper: compute online status colour
@@ -1692,10 +1749,10 @@ export default function ManagerPage() {
                   </h1>
                 </div>
 
-                {!discordUser ? (
+                {!activeUser ? (
                   <div className="rounded-xl border border-[#131c27] bg-[#0c1219] p-12 text-center">
                     <UserPlus size={48} className="mx-auto mb-4 text-[#c6ff2e]/40" />
-                    <p className="text-[#5d738c] mb-2">יש להתחבר עם Discord כדי להשתמש בחברים</p>
+                    <p className="text-[#5d738c] mb-2">יש להתחבר כדי להשתמש בחברים</p>
                   </div>
                 ) : (
                   <div className="space-y-5">
@@ -1736,7 +1793,7 @@ export default function ManagerPage() {
 
                     {/* ── Accepted challenge "play now" ── */}
                     {acceptedChallenges.map((c: any) => {
-                      const isFrom = c.fromUserId === discordUser?.id;
+                      const isFrom = c.fromUserId === activeUser?.id;
                       const opponentTeamAbbr = isFrom ? c.toTeamAbbr : c.fromTeamAbbr;
                       const opponent = isFrom ? c.toUsername : c.fromUsername;
                       return (
@@ -1924,7 +1981,7 @@ export default function ManagerPage() {
                           <input
                             value={friendSearch}
                             onChange={e => setFriendSearch(e.target.value)}
-                            placeholder="חפש לפי שם משתמש Discord..."
+                            placeholder="חפש לפי שם משתמש..."
                             className="w-full rounded-xl border border-[#24466d] bg-[#071821] py-3 pr-10 pl-4 text-sm text-white outline-none focus:border-[#c6ff2e] transition"
                           />
                         </div>

@@ -104,6 +104,19 @@ export default new Module('manager', {
       };
     },
 
+    // קבל userId של manager לפי Discord username — ציבורי, לא דורש session
+    getManagerByDiscord: async (args: unknown) => {
+      const { discordUsername } = z.object({ discordUsername: z.string() }).parse(args);
+      const manager = await dbManagers.findOne({ discordUsername } as any);
+      if (!manager) return null;
+      return {
+        userId: String(manager.userId),
+        teamAbbr: manager.teamAbbr,
+        discordUsername: manager.discordUsername,
+        discordAvatar: manager.discordAvatar,
+      };
+    },
+
     // קבל שחקנים של המנהל
     getMyPlayers: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
@@ -220,14 +233,15 @@ export default new Module('manager', {
 
     // ── FRIENDS ─────────────────────────────────────────────────────────
     getFriends: async (_args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) return [];
+      if (!user) throw new AuthError('Not authenticated');
+      const userId = user.id;
       try {
-        const uid = new ObjectId(user.id);
+        const uid = new ObjectId(userId);
         const rows = await (await dbFriends._col()).find({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
         }).toArray() as any[];
         const otherIds = rows.map(r => {
-          const isSender = String(r.fromUserId) === user.id;
+          const isSender = String(r.fromUserId) === userId;
           return isSender ? String(r.toUserId) : String(r.fromUserId);
         });
         const managerRecords = otherIds.length > 0
@@ -236,7 +250,7 @@ export default new Module('manager', {
         const managerMap = new Map(managerRecords.map(m => [String(m.userId), m]));
         const onlineThreshold = new Date(Date.now() - 3 * 60 * 1000);
         return rows.map(r => {
-          const isSender = String(r.fromUserId) === user.id;
+          const isSender = String(r.fromUserId) === userId;
           const friendUserId = isSender ? String(r.toUserId) : String(r.fromUserId);
           const mgr = managerMap.get(friendUserId);
           return {
@@ -253,15 +267,14 @@ export default new Module('manager', {
       } catch { return []; }
     },
 
-    // חיפוש משתמשים
+    // חיפוש משתמשים — ציבורי (לא דורש Modelence session)
     searchUsers: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) return [];
+      if (!user) throw new AuthError('Not authenticated');
       const { query } = z.object({ query: z.string() }).parse(args);
       const managers = await dbManagers.fetch({} as any, { limit: 500 });
       const lower = query.toLowerCase().trim();
       return managers
         .filter(m => {
-          if (String(m.userId) === user.id) return false;
           if (lower === '') return true;
           const name = (m.discordUsername || '').toLowerCase();
           return name.includes(lower);
@@ -276,10 +289,10 @@ export default new Module('manager', {
     },
 
     // ── CHALLENGES ──────────────────────────────────────────────────────
-    getChallenges: async (_args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) return [];
+    getChallenges: async (args: unknown) => {
+      const { userId } = z.object({ userId: z.string() }).parse(args);
       try {
-        const uid = new ObjectId(user.id);
+        const uid = new ObjectId(userId);
         const rows = await (await dbChallenges._col()).find({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
           status: { $in: ['pending', 'accepted'] },
@@ -357,15 +370,20 @@ export default new Module('manager', {
     // יצירת מנהל חדש
     createManager: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const { teamAbbr } = z.object({ teamAbbr: z.string() }).parse(args);
+      const { teamAbbr, displayName } = z.object({
+        teamAbbr: z.string(),
+        displayName: z.string().trim().min(2).max(24).regex(/^[\p{L}\p{N}_.-]+$/u),
+      }).parse(args);
 
       const existing = await dbManagers.findOne({ userId: new ObjectId(user.id) });
       if (existing) throw new Error('Manager already exists');
+      const nameTaken = await dbManagers.findOne({ discordUsername: { $regex: `^${displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } } as any);
+      if (nameTaken) throw new Error('שם המשתמש כבר תפוס');
 
       await dbManagers.insertOne({
         userId: new ObjectId(user.id),
-        discordId: '',
-        discordUsername: (user as any).username || 'Guest',
+        discordId: user.id,
+        discordUsername: displayName,
         discordAvatar: '',
         teamAbbr,
         budget: STARTING_BUDGET,
@@ -601,10 +619,13 @@ export default new Module('manager', {
     // ── FRIENDS ─────────────────────────────────────────────────────────
     sendFriendRequest: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const { toUserId } = z.object({ toUserId: z.string() }).parse(args);
-      if (toUserId === user.id) throw new Error('Cannot add yourself');
+      const { toUserId } = z.object({
+        toUserId: z.string(),
+      }).parse(args);
+      const fromUserId = user.id;
+      if (fromUserId === toUserId) throw new Error('Cannot add yourself');
       try {
-        const fromUid = new ObjectId(user.id);
+        const fromUid = new ObjectId(fromUserId);
         const toUid = new ObjectId(toUserId);
         const friendsCol = await dbFriends._col();
         const existing = await friendsCol.findOne({
@@ -633,7 +654,7 @@ export default new Module('manager', {
       const { id } = z.object({ id: z.string() }).parse(args);
       try {
         await (await dbFriends._col()).updateOne(
-          { _id: new ObjectId(id) },
+          { _id: new ObjectId(id), toUserId: new ObjectId(user.id), status: 'pending' },
           { $set: { status: 'accepted' } }
         );
       } catch { /* ignore */ }
@@ -644,7 +665,10 @@ export default new Module('manager', {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
       try {
-        await (await dbFriends._col()).deleteOne({ _id: new ObjectId(id) });
+        await (await dbFriends._col()).deleteOne({
+          _id: new ObjectId(id),
+          $or: [{ fromUserId: new ObjectId(user.id) }, { toUserId: new ObjectId(user.id) }],
+        });
       } catch { /* ignore */ }
       return { success: true };
     },
@@ -652,9 +676,12 @@ export default new Module('manager', {
     // ── CHALLENGES ──────────────────────────────────────────────────────
     sendChallenge: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const { toUserId } = z.object({ toUserId: z.string() }).parse(args);
+      const { toUserId } = z.object({
+        toUserId: z.string(),
+      }).parse(args);
+      const fromUserId = user.id;
       try {
-        const fromUid = new ObjectId(user.id);
+        const fromUid = new ObjectId(fromUserId);
         const toUid = new ObjectId(toUserId);
         const fromManager = await dbManagers.requireOne({ userId: fromUid });
         const toManager = await dbManagers.requireOne({ userId: toUid });
@@ -670,8 +697,7 @@ export default new Module('manager', {
       } catch { return { success: false, id: '' }; }
     },
 
-    respondChallenge: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
+    respondChallenge: async (args: unknown) => {
       const { id, accept } = z.object({ id: z.string(), accept: z.boolean() }).parse(args);
       try {
         await (await dbChallenges._col()).updateOne(
@@ -711,7 +737,7 @@ export default new Module('manager', {
 
     // עדכון lastSeen — קרא כל 90 שניות מהקליינט
     pingOnline: async (_args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) return { success: false };
+      if (!user) throw new AuthError('Not authenticated');
       try {
         await dbManagers.updateOne(
           { userId: new ObjectId(user.id) },
