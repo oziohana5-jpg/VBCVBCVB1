@@ -510,6 +510,7 @@ export default function ManagerPage() {
   const activeUser = discordUser ?? accountUser;
 
   const discordExchange = useMutation(modelenceMutation('manager.exchangeDiscordCode'));
+  const updateDiscordInfoMutation = useMutation(modelenceMutation('manager.updateDiscordInfo'));
   const createManagerMutation = useMutation({
     ...modelenceMutation('manager.createManager'),
     onSuccess: () => { void refetchManager(); },
@@ -565,6 +566,17 @@ export default function ManagerPage() {
 
     runDiscordCallback();
   }, []);
+
+  useEffect(() => {
+    if (!sessionUser || !discordUser?.id) return;
+    updateDiscordInfoMutation.mutate({
+      discordId: discordUser.id,
+      discordUsername: discordUser.username,
+      discordAvatar: discordUser.avatar,
+    });
+  // The Discord profile changes only after the OAuth callback.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionUser, discordUser]);
 
   const [squad, setSquad]             = useState<OwnedPlayer[]>(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.squad) ?? '[]'); } catch { return []; }
