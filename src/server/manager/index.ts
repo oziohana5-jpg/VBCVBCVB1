@@ -60,7 +60,7 @@ function loadProviderSquad(team: string, apiKey: string) {
 }
 
 export default new Module('manager', {
-  stores: [dbManagers, dbManagerPlayers, dbMatchResults, dbNews, dbEvents, dbEventProgress, dbFriends, dbChallenges],
+  stores: [dbManagers, dbManagerPlayers, dbMatchResults],
 
   queries: {
     // Resolve a real player headshot through API-Football without exposing the
@@ -173,8 +173,8 @@ export default new Module('manager', {
     // קבל כתבות חדשות (ממוין מהחדש לישן, עד 50)
     getNews: async () => {
       try {
-        const articles = await dbNews.fetch({}, { limit: 50, sort: { createdAt: -1 } });
-        return articles.map(a => ({
+        const articles = await dbNews._col().find({}).sort({ createdAt: -1 }).limit(50).toArray();
+        return articles.map((a: any) => ({
           id: String(a._id),
           tag: a.tag,
           title: a.title,
@@ -189,16 +189,16 @@ export default new Module('manager', {
     // ── EVENTS ──────────────────────────────────────────────────────────
     getEvents: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       try {
-        const events = await dbEvents.fetch({ active: true }, { sort: { createdAt: -1 } });
+        const events = await dbEvents._col().find({ active: true }).sort({ createdAt: -1 }).toArray();
         const result = [];
-        for (const ev of events) {
+        for (const ev of events as any[]) {
           let progress = 0;
           let completed = false;
           if (user) {
             try {
-              const prog = await dbEventProgress.findOne({ userId: new ObjectId(user.id), eventId: String(ev._id) });
-              progress = prog?.progress ?? 0;
-              completed = prog?.completed ?? false;
+              const prog = await dbEventProgress._col().findOne({ userId: new ObjectId(user.id), eventId: String(ev._id) });
+              progress = (prog as any)?.progress ?? 0;
+              completed = (prog as any)?.completed ?? false;
             } catch { /* ignore */ }
           }
           result.push({
@@ -222,10 +222,9 @@ export default new Module('manager', {
       if (!user) return [];
       try {
         const uid = new ObjectId(user.id);
-        const rows = await dbFriends.fetch({
+        const rows = await dbFriends._col().find({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
-        } as any);
-        // Load manager records for online status + teamAbbr
+        }).toArray() as any[];
         const otherIds = rows.map(r => {
           const isSender = String(r.fromUserId) === user.id;
           return isSender ? String(r.toUserId) : String(r.fromUserId);
@@ -234,7 +233,7 @@ export default new Module('manager', {
           ? await dbManagers.fetch({ userId: { $in: otherIds.map(id => new ObjectId(id)) } } as any)
           : [];
         const managerMap = new Map(managerRecords.map(m => [String(m.userId), m]));
-        const onlineThreshold = new Date(Date.now() - 3 * 60 * 1000); // 3 minutes
+        const onlineThreshold = new Date(Date.now() - 3 * 60 * 1000);
         return rows.map(r => {
           const isSender = String(r.fromUserId) === user.id;
           const friendUserId = isSender ? String(r.toUserId) : String(r.fromUserId);
@@ -284,10 +283,10 @@ export default new Module('manager', {
       if (!user) return [];
       try {
         const uid = new ObjectId(user.id);
-        const rows = await dbChallenges.fetch({
+        const rows = await dbChallenges._col().find({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
           status: { $in: ['pending', 'accepted'] },
-        } as any, { sort: { createdAt: -1 }, limit: 20 });
+        }).sort({ createdAt: -1 }).limit(20).toArray() as any[];
         return rows.map(r => ({
           id: String(r._id),
           fromUserId: String(r.fromUserId),
@@ -541,10 +540,10 @@ export default new Module('manager', {
         throw new Error('Unauthorized');
       }
 
-      const doc = await dbNews.insertOne({
+      const doc = await dbNews._col().insertOne({
         tag, title, excerpt, image, author, createdAt: new Date(),
       });
-      return { success: true, id: String(doc._id) };
+      return { success: true, id: String(doc.insertedId) };
     },
 
     // מחק כתבה לפי _id — אדמין בלבד
@@ -553,7 +552,7 @@ export default new Module('manager', {
       if (author.trim().toLowerCase() !== 'knafe3') {
         throw new Error('Unauthorized');
       }
-      await dbNews.deleteOne({ _id: new ObjectId(id) });
+      await dbNews._col().deleteOne({ _id: new ObjectId(id) });
       return { success: true };
     },
 
@@ -588,11 +587,11 @@ export default new Module('manager', {
         expiresAt: z.string(),
       }).parse(args);
       try {
-        const doc = await dbEvents.insertOne({
+        const doc = await dbEvents._col().insertOne({
           title, description, type, target, reward, active: true,
           createdAt: new Date(), expiresAt: new Date(expiresAt),
         });
-        return { success: true, id: String(doc._id) };
+        return { success: true, id: String(doc.insertedId) };
       } catch { return { success: false, id: '' }; }
     },
 
@@ -600,7 +599,7 @@ export default new Module('manager', {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
       try {
-        await dbEvents.updateOne({ _id: new ObjectId(id) }, { $set: { active: false } });
+        await dbEvents._col().updateOne({ _id: new ObjectId(id) }, { $set: { active: false } });
       } catch { /* ignore if not provisioned */ }
       return { success: true };
     },
@@ -613,13 +612,13 @@ export default new Module('manager', {
       try {
         const fromUid = new ObjectId(user.id);
         const toUid = new ObjectId(toUserId);
-        const existing = await dbFriends.findOne({
+        const existing = await dbFriends._col().findOne({
           $or: [{ fromUserId: fromUid, toUserId: toUid }, { fromUserId: toUid, toUserId: fromUid }],
-        } as any);
+        });
         if (existing) throw new Error('Already friends or pending');
         const fromManager = await dbManagers.requireOne({ userId: fromUid });
         const toManager = await dbManagers.requireOne({ userId: toUid });
-        await dbFriends.insertOne({
+        await dbFriends._col().insertOne({
           fromUserId: fromUid, toUserId: toUid,
           fromUsername: fromManager.discordUsername, toUsername: toManager.discordUsername,
           fromAvatar: fromManager.discordAvatar, toAvatar: toManager.discordAvatar,
@@ -635,14 +634,14 @@ export default new Module('manager', {
     acceptFriendRequest: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      try { await dbFriends.updateOne({ _id: new ObjectId(id) }, { $set: { status: 'accepted' } }); } catch { /* ignore */ }
+      try { await dbFriends._col().updateOne({ _id: new ObjectId(id) }, { $set: { status: 'accepted' } }); } catch { /* ignore */ }
       return { success: true };
     },
 
     removeFriend: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      try { await dbFriends.deleteOne({ _id: new ObjectId(id) }); } catch { /* ignore */ }
+      try { await dbFriends._col().deleteOne({ _id: new ObjectId(id) }); } catch { /* ignore */ }
       return { success: true };
     },
 
@@ -655,21 +654,21 @@ export default new Module('manager', {
         const toUid = new ObjectId(toUserId);
         const fromManager = await dbManagers.requireOne({ userId: fromUid });
         const toManager = await dbManagers.requireOne({ userId: toUid });
-        const doc = await dbChallenges.insertOne({
+        const doc = await dbChallenges._col().insertOne({
           fromUserId: fromUid, toUserId: toUid,
           fromUsername: fromManager.discordUsername, toUsername: toManager.discordUsername,
           fromTeamAbbr: fromManager.teamAbbr, toTeamAbbr: toManager.teamAbbr,
           status: 'pending', fromScore: 0, toScore: 0, winnerId: '',
           createdAt: new Date(), completedAt: new Date(0),
         });
-        return { success: true, id: String(doc._id) };
+        return { success: true, id: String(doc.insertedId) };
       } catch { return { success: false, id: '' }; }
     },
 
     respondChallenge: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id, accept } = z.object({ id: z.string(), accept: z.boolean() }).parse(args);
-      try { await dbChallenges.updateOne({ _id: new ObjectId(id) }, { $set: { status: accept ? 'accepted' : 'declined' } }); } catch { /* ignore */ }
+      try { await dbChallenges._col().updateOne({ _id: new ObjectId(id) }, { $set: { status: accept ? 'accepted' : 'declined' } }); } catch { /* ignore */ }
       return { success: true };
     },
 
@@ -677,12 +676,13 @@ export default new Module('manager', {
       if (!user) throw new AuthError('Not authenticated');
       const { id, myScore, opponentScore } = z.object({ id: z.string(), myScore: z.number(), opponentScore: z.number() }).parse(args);
       try {
-        const challenge = await dbChallenges.requireOne({ _id: new ObjectId(id) });
+        const challenge = await dbChallenges._col().findOne({ _id: new ObjectId(id) }) as any;
+        if (!challenge) throw new Error('Challenge not found');
         const isFrom = String(challenge.fromUserId) === user.id;
         const fromScore = isFrom ? myScore : opponentScore;
         const toScore = isFrom ? opponentScore : myScore;
         const winnerId = fromScore > toScore ? String(challenge.fromUserId) : toScore > fromScore ? String(challenge.toUserId) : '';
-        await dbChallenges.updateOne({ _id: new ObjectId(id) }, { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } });
+        await dbChallenges._col().updateOne({ _id: new ObjectId(id) }, { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } });
         return { success: true, winnerId };
       } catch { return { success: true, winnerId: '' }; }
     },

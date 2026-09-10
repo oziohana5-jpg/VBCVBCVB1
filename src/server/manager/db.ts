@@ -28,10 +28,10 @@ export const dbManagers = new Store('managers', {
 export const dbManagerPlayers = new Store('managerPlayers', {
   schema: {
     userId: schema.userId(),
-    playerId: schema.string(),       // ID ייחודי של השחקן
+    playerId: schema.string(),
     playerName: schema.string(),
-    teamAbbr: schema.string(),       // קבוצת השחקן המקורית
-    position: schema.string(),       // GK/DF/MF/ST
+    teamAbbr: schema.string(),
+    position: schema.string(),
     ovr: schema.number(),
     pac: schema.number(),
     sho: schema.number(),
@@ -39,105 +39,14 @@ export const dbManagerPlayers = new Store('managerPlayers', {
     dri: schema.number(),
     def: schema.number(),
     phy: schema.number(),
-    marketValue: schema.number(),    // ערך שוק בשקלים
-    purchasePrice: schema.number(),  // מחיר שנרכש
+    marketValue: schema.number(),
+    purchasePrice: schema.number(),
     purchasedAt: schema.date(),
-    isStarter: schema.boolean(),     // האם בהרכב הפותח
+    isStarter: schema.boolean(),
   },
   indexes: [
     { key: { userId: 1 } },
     { key: { playerId: 1 } },
-  ]
-});
-
-// כתבות חדשות (גלובלי — כותב מנהל מערכת, קורא כולם)
-// NOTE: using 'managers' prefix trick — separate collection name that Modelence will provision
-export const dbNews = new Store('managerNews', {
-  schema: {
-    tag: schema.string(),
-    title: schema.string(),
-    excerpt: schema.string(),
-    image: schema.string(),
-    author: schema.string(),
-    createdAt: schema.date(),
-  },
-  indexes: [
-    { key: { createdAt: -1 } },
-  ]
-});
-
-// אירועים/אתגרים (גלובלי — נוצרים על ידי אדמין)
-export const dbEvents = new Store('managerEvents', {
-  schema: {
-    title: schema.string(),
-    description: schema.string(),
-    type: schema.string(),        // 'win_streak' | 'goals' | 'matches'
-    target: schema.number(),      // כמות נדרשת (5 ניצחונות ברצף וכו׳)
-    reward: schema.number(),      // ₪ שכר
-    active: schema.boolean(),
-    createdAt: schema.date(),
-    expiresAt: schema.date(),
-  },
-  indexes: [
-    { key: { active: 1 } },
-    { key: { createdAt: -1 } },
-  ]
-});
-
-// התקדמות אירועים לכל משתמש
-export const dbEventProgress = new Store('managerEventProgress', {
-  schema: {
-    userId: schema.userId(),
-    eventId: schema.string(),
-    progress: schema.number(),
-    completed: schema.boolean(),
-    completedAt: schema.date(),
-  },
-  indexes: [
-    { key: { userId: 1 } },
-    { key: { eventId: 1 } },
-    { key: { userId: 1, eventId: 1 }, unique: true },
-  ]
-});
-
-// חברות
-export const dbFriends = new Store('managerFriends', {
-  schema: {
-    fromUserId: schema.userId(),
-    toUserId: schema.userId(),
-    fromUsername: schema.string(),
-    toUsername: schema.string(),
-    fromAvatar: schema.string(),
-    toAvatar: schema.string(),
-    status: schema.string(),      // 'pending' | 'accepted'
-    createdAt: schema.date(),
-  },
-  indexes: [
-    { key: { fromUserId: 1 } },
-    { key: { toUserId: 1 } },
-  ]
-});
-
-// אתגרי 1v1
-export const dbChallenges = new Store('managerChallenges', {
-  schema: {
-    fromUserId: schema.userId(),
-    toUserId: schema.userId(),
-    fromUsername: schema.string(),
-    toUsername: schema.string(),
-    fromTeamAbbr: schema.string(),
-    toTeamAbbr: schema.string(),
-    status: schema.string(),      // 'pending' | 'accepted' | 'completed' | 'declined'
-    fromScore: schema.number(),
-    toScore: schema.number(),
-    winnerId: schema.string(),
-    createdAt: schema.date(),
-    completedAt: schema.date(),
-  },
-  indexes: [
-    { key: { fromUserId: 1 } },
-    { key: { toUserId: 1 } },
-    { key: { status: 1 } },
   ]
 });
 
@@ -157,3 +66,21 @@ export const dbMatchResults = new Store('matchResults', {
     { key: { playedAt: -1 } },
   ]
 });
+
+// ─── Collections that use rawCollection() directly ─────────────────────────
+// These are NOT separate Store objects to avoid "Store collision" errors in
+// Modelence when multiple Stores share a collection name.
+// Instead, we expose a helper that uses dbManagers' already-provisioned
+// MongoClient to get a raw MongoDB collection by name.
+
+export function rawCol(name: string) {
+  const db = (dbManagers as any).getDatabase() as import('mongodb').Db;
+  return db.collection(name);
+}
+
+// Thin typed wrappers so callers don't need to import mongodb directly:
+export const dbNews        = { _col: () => rawCol('managerNews') };
+export const dbEvents      = { _col: () => rawCol('managerEvents') };
+export const dbEventProgress = { _col: () => rawCol('managerEventProgress') };
+export const dbFriends     = { _col: () => rawCol('managerFriends') };
+export const dbChallenges  = { _col: () => rawCol('managerChallenges') };
