@@ -253,21 +253,29 @@ export default new Module('manager', {
       } catch { return []; }
     },
 
-    // חיפוש משתמשים — מחזיר את כולם כשהשדה ריק, מסנן לפי שם כשיש קלט
+    // חיפוש משתמשים — מחזיר את כולם כשהשדה ריק, מסנן לפי שם Discord כשיש קלט
     searchUsers: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) return [];
       const { query } = z.object({ query: z.string() }).parse(args);
-      const managers = await dbManagers.fetch({} as any, { limit: 100 });
+      // fetch up to 500 so we don't miss users in a larger DB
+      const managers = await dbManagers.fetch({} as any, { limit: 500 });
       const lower = query.toLowerCase().trim();
       return managers
-        .filter(m => String(m.userId) !== user.id && m.discordUsername &&
-          (lower === '' || m.discordUsername.toLowerCase().includes(lower)))
+        .filter(m => {
+          if (String(m.userId) === user.id) return false;
+          // show all when query is empty (so user sees the list)
+          if (lower === '') return true;
+          // match against Discord username (case-insensitive)
+          const name = (m.discordUsername || '').toLowerCase();
+          return name.includes(lower);
+        })
         .slice(0, 20)
         .map(m => ({
           userId: String(m.userId),
-          username: m.discordUsername,
-          avatar: m.discordAvatar,
-          teamAbbr: m.teamAbbr,
+          // show discordUsername if set, otherwise fall back to userId snippet
+          username: m.discordUsername || `user-${String(m.userId).slice(-5)}`,
+          avatar: m.discordAvatar || '',
+          teamAbbr: m.teamAbbr || '',
         }));
     },
 
@@ -533,21 +541,15 @@ export default new Module('manager', {
         throw new Error('Unauthorized');
       }
 
-      try {
-        const doc = await dbNews.insertOne({
-          tag,
-          title,
-          excerpt,
-          image,
-          author,
-          createdAt: new Date(),
-        });
-        return { success: true, id: String(doc._id) };
-      } catch (e: any) {
-        // Collection not yet provisioned — return success silently so the UI doesn't show DB_NOT_READY
-        console.error('publishNews DB error:', e?.message);
-        return { success: false, id: '' };
-      }
+      const doc = await dbNews.insertOne({
+        tag,
+        title,
+        excerpt,
+        image,
+        author,
+        createdAt: new Date(),
+      });
+      return { success: true, id: String(doc._id) };
     },
 
     // מחק כתבה לפי _id — אדמין בלבד
