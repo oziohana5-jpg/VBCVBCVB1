@@ -113,6 +113,61 @@
   100% { width: 100%; }
 }
 
+@keyframes auth-stars-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-28px, 18px, 0) scale(1.04); }
+}
+
+@keyframes auth-stars-twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+.auth-space {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 100%;
+  background:
+    radial-gradient(ellipse at 50% 115%, rgba(30, 126, 242, 0.26), transparent 56%),
+    radial-gradient(ellipse at 12% 18%, rgba(80, 220, 255, 0.12), transparent 30%),
+    linear-gradient(145deg, #020711 0%, #071a2d 52%, #030914 100%);
+}
+
+.auth-space::before,
+.auth-space::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 8% 22%, rgba(255,255,255,0.95) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 24% 76%, rgba(160,220,255,0.85) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 42% 32%, rgba(255,255,255,0.75) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 67% 18%, rgba(198,255,46,0.8) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 83% 64%, rgba(255,255,255,0.9) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 92% 28%, rgba(117,190,255,0.8) 0 1.2px, transparent 2px);
+  background-size: 260px 220px, 310px 260px, 380px 300px, 290px 240px, 340px 280px, 430px 330px;
+  animation: auth-stars-drift 22s ease-in-out infinite alternate;
+}
+
+.auth-space::after {
+  opacity: 0.55;
+  filter: blur(0.4px);
+  animation: auth-stars-twinkle 4.5s ease-in-out infinite;
+}
+
+.auth-space-content {
+  position: relative;
+  z-index: 1;
+  padding: 2rem 1rem;
+}
+
+.auth-card {
+  border: 1px solid rgba(126, 194, 255, 0.38);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48), 0 0 55px rgba(30, 126, 242, 0.16);
+}
+
 .animate-float {
   animation: float linear infinite;
 }

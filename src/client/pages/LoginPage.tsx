@@ -11,8 +11,10 @@ import Page from '@/client/components/Page';
 export default function LoginPage() {
   return (
     <Page seo={{ title: 'Sign in', noindex: true }}>
-      <div className="flex items-center justify-center min-h-full">
-        <LoginForm />
+      <div className="auth-space flex items-center justify-center min-h-full">
+        <div className="auth-space-content w-full">
+          <LoginForm />
+        </div>
       </div>
     </Page>
   );
@@ -35,7 +37,7 @@ function LoginForm() {
   }, []);
 
   return (
-    <Card className="w-full max-w-sm mx-auto bg-white">
+    <Card className="auth-card w-full max-w-sm mx-auto bg-white">
       <CardHeader className="text-center">
         <CardTitle className="text-xl">
           Sign in to your account

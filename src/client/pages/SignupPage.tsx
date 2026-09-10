@@ -12,8 +12,10 @@ import { toast } from 'react-hot-toast';
 export default function SignupPage() {
   return (
     <Page seo={{ title: 'Sign up', noindex: true }}>
-      <div className="flex items-center justify-center min-h-full">
-        <SignupForm />
+      <div className="auth-space flex items-center justify-center min-h-full">
+        <div className="auth-space-content w-full">
+          <SignupForm />
+        </div>
       </div>
     </Page>
   );
@@ -67,7 +69,7 @@ function SignupForm() {
 
   if (isSignupSuccess) {
     return (
-      <Card className="w-full max-w-sm mx-auto bg-white text-gray-900">
+      <Card className="auth-card w-full max-w-sm mx-auto bg-white text-gray-900">
         <CardHeader className="text-center"><CardTitle className="text-xl">Account created</CardTitle></CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
           <p className="text-gray-600">Your account has been created successfully.</p>
@@ -78,7 +80,7 @@ function SignupForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm mx-auto bg-white text-gray-900">
+    <Card className="auth-card w-full max-w-sm mx-auto bg-white text-gray-900">
       <CardHeader className="text-center"><CardTitle className="text-xl">Create an account</CardTitle></CardHeader>
       <CardContent className="space-y-6">
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-center">
