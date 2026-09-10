@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { modelenceMutation, modelenceQuery } from '@modelence/react-query';
@@ -1659,240 +1659,325 @@ export default function ManagerPage() {
           )}
 
           {/* ══ FRIENDS ═══════════════════════════════ */}
-          {tab === 'friends' && (
-            <div>
-              <div className="mb-7">
-                <p className="mb-2 font-heading text-xs uppercase tracking-[0.28em] text-[#6e9ed1]">FIFA IL Social</p>
-                <h1 className="font-display text-5xl text-white">
-                  חברים <span className="text-[#c6ff2e]">ו-1v1</span>
-                </h1>
+          {tab === 'friends' && (() => {
+            // ── sub-tab state (scoped via IIFE so no extra useState at top level)
+            // We store in a ref-backed approach: use a stable key in sessionStorage
+            const [friendsSubTab, setFriendsSubTab] = React.useState<'list'|'requests'|'search'>('list');
+
+            const incomingRequests = (friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending');
+            const sentRequests     = (friends as any[]).filter((f: any) => f.direction === 'sent'     && f.status === 'pending');
+            const acceptedFriends  = (friends as any[]).filter((f: any) => f.status === 'accepted');
+            const pendingChallenges = (challenges as any[]).filter((c: any) => c.status === 'pending' && c.toUserId === discordUser?.id);
+            const acceptedChallenges = (challenges as any[]).filter((c: any) => c.status === 'accepted');
+
+            // Helper: compute online status colour
+            // isOnline (server) = lastSeen within 3 min
+            // "idle" = we track lastActivity on the server side as lastSeen 3-10 min ago
+            // The server currently only sends isOnline (boolean, 3-min threshold).
+            // We use it directly: online=green, offline=grey. For "idle/away" we'd need
+            // lastSeen timestamp — add it to getFriends response below in a follow-up.
+            function onlineDot(f: any) {
+              if (f.isOnline) return 'bg-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.5)]';
+              return 'bg-[#3a4a5c]';
+            }
+            function onlineLabel(f: any) {
+              if (f.isOnline) return <span className="text-[10px] font-bold text-emerald-400">● אונליין</span>;
+              return <span className="text-[10px] text-[#3a4a5c]">○ אופליין</span>;
+            }
+
+            return (
+              <div>
+                {/* ── Header ── */}
+                <div className="mb-5">
+                  <p className="mb-1 font-heading text-xs uppercase tracking-[0.28em] text-[#6e9ed1]">FIFA IL Social</p>
+                  <h1 className="font-display text-5xl text-white">
+                    חברים <span className="text-[#c6ff2e]">ו-1v1</span>
+                  </h1>
+                </div>
+
+                {!discordUser ? (
+                  <div className="rounded-xl border border-[#131c27] bg-[#0c1219] p-12 text-center">
+                    <UserPlus size={48} className="mx-auto mb-4 text-[#c6ff2e]/40" />
+                    <p className="text-[#5d738c] mb-2">יש להתחבר עם Discord כדי להשתמש בחברים</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+
+                    {/* ── Incoming challenge popup ── */}
+                    {pendingChallenges.map((c: any) => (
+                      <div key={c.id} className="relative overflow-hidden rounded-2xl border-2 border-[#c6ff2e] bg-[#0c1219] p-5 shadow-[0_0_30px_rgba(198,255,46,0.18)]">
+                        <div className="absolute inset-0 bg-[#c6ff2e]/5 pointer-events-none" />
+                        <div className="relative flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#c6ff2e] text-[#070b10]">
+                              <Swords size={22} />
+                            </div>
+                            <div>
+                              <div className="font-heading text-base font-bold text-white">
+                                {c.fromUsername} <span className="text-[#c6ff2e]">מזמין אותך ל-1v1!</span>
+                              </div>
+                              <div className="text-xs text-[#5d738c]">
+                                {c.fromTeamAbbr} נגד {c.toTeamAbbr}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button"
+                              onClick={() => { respondChallengeMutation.mutate({ id: c.id, accept: true }); void refetchChallenges(); }}
+                              className="flex items-center gap-1.5 rounded-xl bg-[#c6ff2e] px-4 py-2 text-sm font-bold text-[#070b10] transition hover:bg-[#d4ff5a]">
+                              <Check size={15} /> אשר
+                            </button>
+                            <button type="button"
+                              onClick={() => { respondChallengeMutation.mutate({ id: c.id, accept: false }); void refetchChallenges(); }}
+                              className="rounded-xl border border-rose-500/40 px-4 py-2 text-sm text-rose-400 transition hover:bg-rose-500/10">
+                              <X size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* ── Accepted challenge "play now" ── */}
+                    {acceptedChallenges.map((c: any) => {
+                      const isFrom = c.fromUserId === discordUser?.id;
+                      const opponentTeamAbbr = isFrom ? c.toTeamAbbr : c.fromTeamAbbr;
+                      const opponent = isFrom ? c.toUsername : c.fromUsername;
+                      return (
+                        <div key={c.id} className="relative overflow-hidden rounded-2xl border-2 border-[#c6ff2e]/60 bg-[#0c1219] p-5">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <div className="font-heading text-base font-bold text-white">
+                                אתגר עם {opponent} <span className="text-emerald-400">✅ אושר!</span>
+                              </div>
+                              <div className="text-xs text-[#5d738c]">{c.fromTeamAbbr} vs {c.toTeamAbbr}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleStartChallengeMatch(c.id, opponentTeamAbbr)}
+                              className="flex items-center gap-2 rounded-xl bg-[#c6ff2e] px-5 py-2.5 text-sm font-bold text-[#070b10] animate-pulse transition hover:scale-105 hover:bg-[#d4ff5a]">
+                              🎮 שחק עכשיו!
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* ── Sub-tab nav ── */}
+                    <div className="flex rounded-xl border border-[#1d2f44] bg-[#0c1219] p-1 gap-1">
+                      {([
+                        { key: 'list',     label: 'החברים שלי', icon: <Users size={14} />,    badge: acceptedFriends.length },
+                        { key: 'requests', label: 'בקשות',      icon: <Inbox size={14} />,   badge: incomingRequests.length },
+                        { key: 'search',   label: 'חיפוש',      icon: <Search size={14} />,  badge: 0 },
+                      ] as { key: 'list'|'requests'|'search'; label: string; icon: React.ReactNode; badge: number }[]).map(st => (
+                        <button
+                          key={st.key}
+                          type="button"
+                          onClick={() => setFriendsSubTab(st.key)}
+                          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-heading transition
+                            ${friendsSubTab === st.key ? 'bg-[#c6ff2e] text-[#070b10]' : 'text-[#5d738c] hover:text-white'}`}
+                        >
+                          {st.icon}
+                          {st.label}
+                          {st.badge > 0 && (
+                            <span className={`absolute -top-1 -right-1 h-4 w-4 rounded-full text-[10px] font-bold flex items-center justify-center
+                              ${friendsSubTab === st.key ? 'bg-[#070b10] text-[#c6ff2e]' : 'bg-amber-500 text-[#070b10]'}`}>
+                              {st.badge}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ══ SUB-TAB: Friends list ══ */}
+                    {friendsSubTab === 'list' && (
+                      <div className="rounded-2xl border border-[#1d3a5c] bg-[#0c1219] p-5">
+                        {acceptedFriends.length === 0 ? (
+                          <div className="py-10 text-center">
+                            <Users size={40} className="mx-auto mb-3 text-[#1e2b3a]" />
+                            <p className="text-sm text-[#5d738c]">עדיין אין חברים. חפש שחקנים בטאב חיפוש!</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {acceptedFriends.map((f: any) => (
+                              <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-3 transition hover:border-[#2a4060]">
+                                <div className="flex items-center gap-3">
+                                  <div className="relative">
+                                    {f.avatar
+                                      ? <img src={f.avatar} className="h-11 w-11 rounded-full object-cover" alt="" />
+                                      : <div className="h-11 w-11 rounded-full bg-[#1e7ef2] flex items-center justify-center text-base font-bold text-white">{f.username[0]}</div>}
+                                    <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#071821] ${onlineDot(f)}`} />
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-white">{f.username}</div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      {f.teamAbbr && <span className="text-xs text-[#5d738c]">{f.teamAbbr}</span>}
+                                      {onlineLabel(f)}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button type="button"
+                                    onClick={() => sendChallengeMutation.mutate({ toUserId: f.userId })}
+                                    disabled={sendChallengeMutation.isPending || !f.isOnline}
+                                    title={!f.isOnline ? 'השחקן אופליין' : 'שלח אתגר'}
+                                    className="flex items-center gap-1.5 rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                                    <Swords size={13} /> 1v1
+                                  </button>
+                                  <button type="button"
+                                    onClick={() => removeFriendMutation.mutate({ id: f.id })}
+                                    className="rounded-lg border border-[#26384b] p-1.5 text-[#5d738c] hover:text-rose-400 transition">
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ══ SUB-TAB: Requests ══ */}
+                    {friendsSubTab === 'requests' && (
+                      <div className="space-y-4">
+                        {/* Incoming */}
+                        <div className="rounded-2xl border border-amber-500/30 bg-[#0c1219] p-5">
+                          <h2 className="mb-3 font-heading text-base text-white flex items-center gap-2">
+                            <Inbox size={15} className="text-amber-400" />
+                            בקשות שקיבלת
+                            {incomingRequests.length > 0 && (
+                              <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-[#070b10]">
+                                {incomingRequests.length}
+                              </span>
+                            )}
+                          </h2>
+                          {incomingRequests.length === 0 ? (
+                            <p className="text-sm text-[#5d738c] py-3 text-center">אין בקשות ממתינות</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {incomingRequests.map((f: any) => (
+                                <div key={f.id} className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-[#071821] px-4 py-3">
+                                  <div className="flex items-center gap-3">
+                                    {f.avatar
+                                      ? <img src={f.avatar} className="h-10 w-10 rounded-full border-2 border-amber-500/40" alt="" />
+                                      : <div className="h-10 w-10 rounded-full bg-amber-500 flex items-center justify-center text-sm font-bold text-[#070b10]">{f.username[0]}</div>}
+                                    <div>
+                                      <div className="font-bold text-white">{f.username}</div>
+                                      {f.teamAbbr && <div className="text-xs text-[#5d738c]">{f.teamAbbr}</div>}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button type="button"
+                                      onClick={() => { acceptFriendMutation.mutate({ id: f.id }); }}
+                                      className="flex items-center gap-1 rounded-lg bg-[#c6ff2e] px-4 py-1.5 text-xs font-bold text-[#070b10] transition hover:bg-[#d4ff5a]">
+                                      <Check size={13} /> אשר
+                                    </button>
+                                    <button type="button"
+                                      onClick={() => removeFriendMutation.mutate({ id: f.id })}
+                                      className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 transition">
+                                      <X size={13} /> דחה
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sent */}
+                        <div className="rounded-2xl border border-[#1d2f44] bg-[#0c1219] p-5">
+                          <h2 className="mb-3 font-heading text-base text-[#9ab7d7] flex items-center gap-2">
+                            <UserPlus size={14} /> בקשות שנשלחו
+                          </h2>
+                          {sentRequests.length === 0 ? (
+                            <p className="text-sm text-[#5d738c] py-3 text-center">לא שלחת בקשות</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {sentRequests.map((f: any) => (
+                                <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
+                                  <div className="flex items-center gap-3">
+                                    {f.avatar
+                                      ? <img src={f.avatar} className="h-8 w-8 rounded-full opacity-70" alt="" />
+                                      : <div className="h-8 w-8 rounded-full bg-[#1d2f44] flex items-center justify-center text-xs text-[#5d738c]">{f.username[0]}</div>}
+                                    <div>
+                                      <span className="text-sm text-[#9ab7d7]">{f.username}</span>
+                                      {f.teamAbbr && <div className="text-xs text-[#5d738c]">{f.teamAbbr}</div>}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-[#5d738c] italic">ממתין לאישור...</span>
+                                    <button type="button"
+                                      onClick={() => removeFriendMutation.mutate({ id: f.id })}
+                                      className="rounded-lg border border-[#26384b] p-1 text-[#5d738c] hover:text-rose-400 transition">
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ══ SUB-TAB: Search ══ */}
+                    {friendsSubTab === 'search' && (
+                      <div className="rounded-2xl border border-[#1d3a5c] bg-[#0c1219] p-5">
+                        <div className="relative mb-4">
+                          <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5d738c]" />
+                          <input
+                            value={friendSearch}
+                            onChange={e => setFriendSearch(e.target.value)}
+                            placeholder="חפש לפי שם משתמש Discord..."
+                            className="w-full rounded-xl border border-[#24466d] bg-[#071821] py-3 pr-10 pl-4 text-sm text-white outline-none focus:border-[#c6ff2e] transition"
+                          />
+                        </div>
+
+                        {friendSearch.trim() === '' ? (
+                          <p className="text-sm text-[#5d738c] text-center py-6">הכנס שם לחיפוש שחקן</p>
+                        ) : (searchResults as any[]).length === 0 ? (
+                          <p className="text-sm text-[#5d738c] text-center py-6">לא נמצאו שחקנים</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(searchResults as any[]).map((u: any) => {
+                              const rel = (friends as any[]).find(f => f.userId === u.userId);
+                              const isAccepted = rel?.status === 'accepted';
+                              const isPending  = rel?.status === 'pending';
+                              return (
+                                <div key={u.userId} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-3 transition hover:border-[#2a4060]">
+                                  <div className="flex items-center gap-3">
+                                    {u.avatar
+                                      ? <img src={u.avatar} className="h-10 w-10 rounded-full" alt="" />
+                                      : <div className="h-10 w-10 rounded-full bg-[#1e7ef2] flex items-center justify-center text-sm font-bold text-white">{u.username[0]}</div>}
+                                    <div>
+                                      <div className="font-bold text-white">{u.username}</div>
+                                      <div className="text-xs text-[#5d738c]">{u.teamAbbr || '—'}</div>
+                                    </div>
+                                  </div>
+                                  {isAccepted ? (
+                                    <span className="rounded-lg border border-emerald-500/30 px-3 py-1.5 text-xs text-emerald-400">✓ חבר</span>
+                                  ) : isPending ? (
+                                    <span className="rounded-lg border border-[#1d2f44] px-3 py-1.5 text-xs text-[#5d738c]">ממתין...</span>
+                                  ) : (
+                                    <button type="button"
+                                      onClick={() => sendFriendMutation.mutate({ toUserId: u.userId })}
+                                      disabled={sendFriendMutation.isPending}
+                                      className="flex items-center gap-1.5 rounded-lg bg-[#1e7ef2] px-4 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a9ef3] disabled:opacity-50">
+                                      <UserPlus size={13} /> הוסף חבר
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+                )}
               </div>
-
-              {!discordUser ? (
-                <div className="rounded-xl border border-[#131c27] bg-[#0c1219] p-12 text-center">
-                  <UserPlus size={48} className="mx-auto mb-4 text-[#c6ff2e]/40" />
-                  <p className="text-[#5d738c] mb-2">יש להתחבר עם Discord כדי להשתמש בחברים</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-
-                  {/* Search + add */}
-                  <div className="rounded-2xl border border-[#1d3a5c] bg-[#0c1219] p-5">
-                    <h2 className="mb-3 font-heading text-lg text-white flex items-center gap-2">
-                      <Search size={16} className="text-[#c6ff2e]" /> חיפוש שחקנים
-                    </h2>
-                    <div className="flex gap-2">
-                      <input
-                        value={friendSearch}
-                        onChange={e => setFriendSearch(e.target.value)}
-                        placeholder="חפש לפי שם משתמש Discord..."
-                        className="flex-1 rounded-xl border border-[#24466d] bg-[#071821] px-4 py-2.5 text-sm text-white outline-none focus:border-[#c6ff2e]"
-                      />
-                    </div>
-                    {(searchResults as any[]).length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {(searchResults as any[]).map((u: any) => {
-                          const alreadyFriend = (friends as any[]).some(f =>
-                            f.userId === u.userId && (f.status === 'accepted' || f.status === 'pending')
-                          );
-                          return (
-                            <div key={u.userId} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
-                              <div className="flex items-center gap-3">
-                                {u.avatar
-                                  ? <img src={u.avatar} className="h-8 w-8 rounded-full" alt="" />
-                                  : <div className="h-8 w-8 rounded-full bg-[#1e7ef2] flex items-center justify-center text-xs font-bold text-white">{u.username[0]}</div>}
-                                <div>
-                                  <div className="text-sm font-bold text-white">{u.username}</div>
-                                  <div className="text-xs text-[#5d738c]">{u.teamAbbr}</div>
-                                </div>
-                              </div>
-                              {alreadyFriend ? (
-                                <span className="rounded-lg border border-[#1d2f44] px-3 py-1.5 text-xs text-[#5d738c]">כבר חבר</span>
-                              ) : (
-                                <button type="button"
-                                  onClick={() => sendFriendMutation.mutate({ toUserId: u.userId })}
-                                  disabled={sendFriendMutation.isPending}
-                                  className="rounded-lg bg-[#1e7ef2] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#4a9ef3] disabled:opacity-50">
-                                  + הוסף
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Pending incoming requests */}
-                  {(friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending').length > 0 && (
-                    <div className="rounded-2xl border border-amber-500/30 bg-[#0c1219] p-5">
-                      <h2 className="mb-3 font-heading text-lg text-white flex items-center gap-2">
-                        <Inbox size={16} className="text-amber-400" />
-                        בקשות חברות ממתינות
-                        <span className="ml-1 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-[#070b10]">
-                          {(friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending').length}
-                        </span>
-                      </h2>
-                      <div className="space-y-2">
-                        {(friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending').map((f: any) => (
-                          <div key={f.id} className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-[#071821] px-4 py-2.5">
-                            <div className="flex items-center gap-3">
-                              {f.avatar
-                                ? <img src={f.avatar} className="h-9 w-9 rounded-full border-2 border-amber-500/40" alt="" />
-                                : <div className="h-9 w-9 rounded-full bg-amber-500 flex items-center justify-center text-xs font-bold text-[#070b10]">{f.username[0]}</div>}
-                              <div>
-                                <div className="text-sm font-bold text-white">{f.username}</div>
-                                {f.teamAbbr && <div className="text-xs text-[#5d738c]">{f.teamAbbr}</div>}
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <button type="button"
-                                onClick={() => acceptFriendMutation.mutate({ id: f.id })}
-                                className="flex items-center gap-1 rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:bg-[#d4ff5a]">
-                                <Check size={13} /> אשר
-                              </button>
-                              <button type="button"
-                                onClick={() => removeFriendMutation.mutate({ id: f.id })}
-                                className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 transition">
-                                <X size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sent pending requests */}
-                  {(friends as any[]).filter((f: any) => f.direction === 'sent' && f.status === 'pending').length > 0 && (
-                    <div className="rounded-2xl border border-[#1d2f44] bg-[#0c1219] p-5">
-                      <h2 className="mb-3 font-heading text-sm text-[#5d738c] flex items-center gap-2">
-                        <UserPlus size={14} /> בקשות שנשלחו
-                      </h2>
-                      <div className="space-y-2">
-                        {(friends as any[]).filter((f: any) => f.direction === 'sent' && f.status === 'pending').map((f: any) => (
-                          <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-2.5">
-                            <div className="flex items-center gap-3">
-                              {f.avatar
-                                ? <img src={f.avatar} className="h-7 w-7 rounded-full opacity-70" alt="" />
-                                : <div className="h-7 w-7 rounded-full bg-[#1d2f44] flex items-center justify-center text-xs text-[#5d738c]">{f.username[0]}</div>}
-                              <span className="text-sm text-[#9ab7d7]">{f.username}</span>
-                            </div>
-                            <span className="text-xs text-[#5d738c] italic">ממתין לאישור...</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Friends list */}
-                  <div className="rounded-2xl border border-[#1d3a5c] bg-[#0c1219] p-5">
-                    <h2 className="mb-3 font-heading text-lg text-white flex items-center gap-2">
-                      <Users size={16} className="text-[#c6ff2e]" />
-                      החברים שלי
-                      <span className="text-[#5d738c] text-sm font-normal">
-                        ({(friends as any[]).filter((f: any) => f.status === 'accepted').length})
-                      </span>
-                    </h2>
-                    {(friends as any[]).filter((f: any) => f.status === 'accepted').length === 0 ? (
-                      <p className="text-sm text-[#5d738c] text-center py-4">עדיין אין חברים. חפש שחקנים למעלה!</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {(friends as any[]).filter((f: any) => f.status === 'accepted').map((f: any) => (
-                          <div key={f.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="relative">
-                                {f.avatar
-                                  ? <img src={f.avatar} className="h-9 w-9 rounded-full" alt="" />
-                                  : <div className="h-9 w-9 rounded-full bg-[#1e7ef2] flex items-center justify-center text-sm font-bold text-white">{f.username[0]}</div>}
-                                {/* Online dot */}
-                                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#071821] ${f.isOnline ? 'bg-emerald-400' : 'bg-[#3a4a5c]'}`} title={f.isOnline ? 'אונליין' : 'אופליין'} />
-                              </div>
-                              <div>
-                                <div className="font-bold text-white text-sm">{f.username}</div>
-                                <div className="flex items-center gap-1.5">
-                                  {f.teamAbbr && <span className="text-xs text-[#5d738c]">{f.teamAbbr}</span>}
-                                  <span className={`text-[10px] font-bold uppercase tracking-wider ${f.isOnline ? 'text-emerald-400' : 'text-[#3a4a5c]'}`}>
-                                    {f.isOnline ? '● אונליין' : '○ אופליין'}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button type="button"
-                                onClick={() => sendChallengeMutation.mutate({ toUserId: f.userId })}
-                                disabled={sendChallengeMutation.isPending}
-                                className="flex items-center gap-1.5 rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:-translate-y-0.5 disabled:opacity-50">
-                                <Swords size={13} /> אתגר 1v1
-                              </button>
-                              <button type="button"
-                                onClick={() => removeFriendMutation.mutate({ id: f.id })}
-                                className="rounded-lg border border-[#26384b] px-2 py-1.5 text-xs text-[#5d738c] hover:text-rose-400 transition">
-                                <X size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Challenges */}
-                  {(challenges as any[]).length > 0 && (
-                    <div className="rounded-2xl border border-[#c6ff2e]/20 bg-[#0c1219] p-5">
-                      <h2 className="mb-3 font-heading text-lg text-white flex items-center gap-2">
-                        <Swords size={16} className="text-[#c6ff2e]" /> אתגרי 1v1
-                      </h2>
-                      <div className="space-y-2">
-                        {(challenges as any[]).map((c: any) => {
-                          const isFrom = c.fromUserId === discordUser?.id;
-                          const opponent = isFrom ? c.toUsername : c.fromUsername;
-                          const opponentTeamAbbr = isFrom ? c.toTeamAbbr : c.fromTeamAbbr;
-                          const isPending = c.status === 'pending';
-                          const isAccepted = c.status === 'accepted';
-                          const isIncoming = isPending && !isFrom;
-                          return (
-                            <div key={c.id} className="flex items-center justify-between rounded-xl border border-[#1d2f44] bg-[#071821] px-4 py-3">
-                              <div>
-                                <div className="text-sm font-bold text-white">
-                                  {isFrom ? `אתגרת את ${opponent}` : `${opponent} אתגר אותך`}
-                                </div>
-                                <div className="text-xs text-[#5d738c]">
-                                  {c.fromTeamAbbr} vs {c.toTeamAbbr} · {isPending ? '⏳ ממתין לאישור' : isAccepted ? '✅ התקבל' : c.status}
-                                </div>
-                              </div>
-                              {isIncoming && (
-                                <div className="flex gap-2">
-                                  <button type="button"
-                                    onClick={() => respondChallengeMutation.mutate({ id: c.id, accept: true })}
-                                    className="rounded-lg bg-[#c6ff2e] px-3 py-1.5 text-xs font-bold text-[#070b10] transition hover:bg-[#d4ff5a]">
-                                    קבל
-                                  </button>
-                                  <button type="button"
-                                    onClick={() => respondChallengeMutation.mutate({ id: c.id, accept: false })}
-                                    className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-400 transition hover:bg-rose-500/10">
-                                    סרב
-                                  </button>
-                                </div>
-                              )}
-                              {isAccepted && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartChallengeMatch(c.id, opponentTeamAbbr)}
-                                  className="flex items-center gap-1.5 rounded-full bg-[#c6ff2e] px-4 py-1.5 text-xs font-bold text-[#070b10] transition hover:scale-105 hover:bg-[#d4ff5a] animate-pulse">
-                                  🎮 שחק עכשיו!
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           {/* ══ SQUAD ═════════════════════════════════ */}
           {tab === 'squad' && (
