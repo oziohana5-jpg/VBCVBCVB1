@@ -721,7 +721,7 @@ export default function ManagerPage() {
   };
 
   const handleDeleteNews = (id: string) => {
-    deleteNewsMutation.mutate({ id });
+    deleteNewsMutation.mutate({ id, author: discordUser?.username ?? '' });
   };
 
   /** Skip the live match clock to minute 80 */

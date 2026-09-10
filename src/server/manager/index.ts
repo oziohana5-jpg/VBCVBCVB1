@@ -504,8 +504,8 @@ export default new Module('manager', {
     },
 
     // פרסם כתבה — אדמין בלבד (knafe3)
-    publishNews: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
+    // Auth is Discord-based (no Modelence session), so we verify by author name
+    publishNews: async (args: unknown) => {
       const { tag, title, excerpt, image, author } = z.object({
         tag: z.string().min(1),
         title: z.string().min(1),
@@ -513,6 +513,11 @@ export default new Module('manager', {
         image: z.string(),
         author: z.string(),
       }).parse(args);
+
+      // Only knafe3 may publish
+      if (author.trim().toLowerCase() !== 'knafe3') {
+        throw new Error('Unauthorized');
+      }
 
       const doc = await dbNews.insertOne({
         tag,
@@ -527,9 +532,11 @@ export default new Module('manager', {
     },
 
     // מחק כתבה לפי _id — אדמין בלבד
-    deleteNews: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
-      const { id } = z.object({ id: z.string() }).parse(args);
+    deleteNews: async (args: unknown) => {
+      const { id, author } = z.object({ id: z.string(), author: z.string() }).parse(args);
+      if (author.trim().toLowerCase() !== 'knafe3') {
+        throw new Error('Unauthorized');
+      }
       await dbNews.deleteOne({ _id: new ObjectId(id) });
       return { success: true };
     },
