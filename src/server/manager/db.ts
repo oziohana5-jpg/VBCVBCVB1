@@ -85,8 +85,26 @@ async function getDb(): Promise<Db> {
   if (_connectPromise) return _connectPromise;
 
   _connectPromise = (async () => {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error('MONGODB_URI environment variable is not set');
+    // Modelence may use different env var names depending on the platform.
+    // Try all known names in order of preference.
+    const uri =
+      process.env.MONGODB_URI ||
+      process.env.MODELENCE_MONGODB_URI ||
+      process.env.MONGO_URL ||
+      process.env.DATABASE_URL;
+
+    if (!uri) {
+      const known = ['MONGODB_URI', 'MODELENCE_MONGODB_URI', 'MONGO_URL', 'DATABASE_URL'];
+      throw new Error(
+        `No MongoDB URI found. Checked: ${known.join(', ')}. ` +
+        `Please set one of these environment variables in your Render/deployment settings.`
+      );
+    }
+
+    console.log('[db] Connecting to MongoDB (URI source: ' +
+      (process.env.MONGODB_URI ? 'MONGODB_URI' :
+       process.env.MODELENCE_MONGODB_URI ? 'MODELENCE_MONGODB_URI' :
+       process.env.MONGO_URL ? 'MONGO_URL' : 'DATABASE_URL') + ')');
 
     // Parse the database name from the URI (everything after the last '/' before '?')
     const uriObj = new URL(uri);
@@ -95,6 +113,7 @@ async function getDb(): Promise<Db> {
     _client = new MongoClient(uri);
     await _client.connect();
     _db = _client.db(dbName);
+    console.log('[db] Connected to database:', dbName);
     return _db;
   })();
 
