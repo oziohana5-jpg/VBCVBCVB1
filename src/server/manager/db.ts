@@ -83,8 +83,9 @@ async function getDirectClient(): Promise<MongoClient> {
   if (_directConnectPromise) return _directConnectPromise;
 
   _directConnectPromise = (async () => {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error('MONGODB_URI environment variable is not set');
+    // Modelence uses MODELENCE_MONGODB_URI internally; fallback to MONGODB_URI
+    const uri = process.env.MODELENCE_MONGODB_URI || process.env.MONGODB_URI;
+    if (!uri) throw new Error('Neither MODELENCE_MONGODB_URI nor MONGODB_URI is set');
     const client = new MongoClient(uri);
     await client.connect();
     _directClient = client;
@@ -103,7 +104,7 @@ async function col(name: string): Promise<Collection<any>> {
   } catch {
     // Store not yet fully provisioned — use direct client
     const client = await getDirectClient();
-    const uri = process.env.MONGODB_URI!;
+    const uri = process.env.MODELENCE_MONGODB_URI || process.env.MONGODB_URI!;
     const uriObj = new URL(uri);
     const dbName = uriObj.pathname.replace(/^\//, '') || 'forteenite';
     return client.db(dbName).collection(name);
