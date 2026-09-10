@@ -129,9 +129,10 @@
   overflow: hidden;
   min-height: 100%;
   background:
-    radial-gradient(ellipse at 50% 115%, rgba(30, 126, 242, 0.26), transparent 56%),
-    radial-gradient(ellipse at 12% 18%, rgba(80, 220, 255, 0.12), transparent 30%),
-    linear-gradient(145deg, #020711 0%, #071a2d 52%, #030914 100%);
+    radial-gradient(ellipse at 50% 112%, rgba(30, 126, 242, 0.42), transparent 48%),
+    radial-gradient(ellipse at 8% 22%, rgba(0, 221, 255, 0.22), transparent 34%),
+    radial-gradient(ellipse at 92% 72%, rgba(116, 75, 255, 0.17), transparent 32%),
+    linear-gradient(145deg, #01040d 0%, #08223a 50%, #020713 100%);
 }
 
 .auth-space::before,
@@ -141,20 +142,28 @@
   inset: -12%;
   pointer-events: none;
   background-image:
-    radial-gradient(circle at 8% 22%, rgba(255,255,255,0.95) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 24% 76%, rgba(160,220,255,0.85) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 42% 32%, rgba(255,255,255,0.75) 0 1.2px, transparent 2px),
-    radial-gradient(circle at 67% 18%, rgba(198,255,46,0.8) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 83% 64%, rgba(255,255,255,0.9) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 92% 28%, rgba(117,190,255,0.8) 0 1.2px, transparent 2px);
-  background-size: 260px 220px, 310px 260px, 380px 300px, 290px 240px, 340px 280px, 430px 330px;
-  animation: auth-stars-drift 22s ease-in-out infinite alternate;
+    radial-gradient(circle at 8% 22%, rgba(255,255,255,0.98) 0 1.4px, transparent 2.4px),
+    radial-gradient(circle at 24% 76%, rgba(160,220,255,0.95) 0 1.2px, transparent 2.2px),
+    radial-gradient(circle at 42% 32%, rgba(255,255,255,0.9) 0 1.6px, transparent 2.8px),
+    radial-gradient(circle at 67% 18%, rgba(198,255,46,0.95) 0 1.3px, transparent 2.4px),
+    radial-gradient(circle at 83% 64%, rgba(255,255,255,0.98) 0 1.4px, transparent 2.4px),
+    radial-gradient(circle at 92% 28%, rgba(117,190,255,0.95) 0 1.6px, transparent 2.8px),
+    radial-gradient(circle at 15% 48%, rgba(255,255,255,0.8) 0 1px, transparent 2px),
+    radial-gradient(circle at 57% 82%, rgba(0,221,255,0.9) 0 1.2px, transparent 2.3px),
+    radial-gradient(circle at 76% 42%, rgba(255,255,255,0.85) 0 1px, transparent 2px);
+  background-size: 180px 160px, 230px 190px, 290px 220px, 210px 180px, 260px 210px, 320px 250px, 150px 140px, 240px 200px, 200px 170px;
+  animation: auth-stars-drift 18s ease-in-out infinite alternate;
 }
 
 .auth-space::after {
-  opacity: 0.55;
-  filter: blur(0.4px);
-  animation: auth-stars-twinkle 4.5s ease-in-out infinite;
+  opacity: 0.72;
+  filter: blur(0.3px);
+  background-image:
+    linear-gradient(118deg, transparent 0 48%, rgba(145, 229, 255, 0.7) 49%, transparent 50% 100%),
+    radial-gradient(circle at 31% 18%, rgba(255,255,255,0.95) 0 2px, transparent 3.5px),
+    radial-gradient(circle at 74% 76%, rgba(198,255,46,0.9) 0 1.6px, transparent 3px);
+  background-size: 520px 380px, 440px 360px, 360px 300px;
+  animation: auth-stars-twinkle 3.8s ease-in-out infinite;
 }
 
 .auth-space-content {
