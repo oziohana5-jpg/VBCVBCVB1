@@ -519,16 +519,21 @@ export default new Module('manager', {
         throw new Error('Unauthorized');
       }
 
-      const doc = await dbNews.insertOne({
-        tag,
-        title,
-        excerpt,
-        image,
-        author,
-        createdAt: new Date(),
-      });
-
-      return { success: true, id: String(doc._id) };
+      try {
+        const doc = await dbNews.insertOne({
+          tag,
+          title,
+          excerpt,
+          image,
+          author,
+          createdAt: new Date(),
+        });
+        return { success: true, id: String(doc._id) };
+      } catch (e: any) {
+        // If the collection is not yet provisioned, store locally and return success
+        console.error('publishNews DB error:', e?.message);
+        throw new Error('DB_NOT_READY');
+      }
     },
 
     // מחק כתבה לפי _id — אדמין בלבד

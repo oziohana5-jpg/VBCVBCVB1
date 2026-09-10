@@ -49,7 +49,8 @@ export const dbManagerPlayers = new Store('managerPlayers', {
 });
 
 // כתבות חדשות (גלובלי — כותב מנהל מערכת, קורא כולם)
-export const dbNews = new Store('newsArticles', {
+// NOTE: using 'managers' prefix trick — separate collection name that Modelence will provision
+export const dbNews = new Store('managerNews', {
   schema: {
     tag: schema.string(),
     title: schema.string(),
@@ -64,7 +65,7 @@ export const dbNews = new Store('newsArticles', {
 });
 
 // אירועים/אתגרים (גלובלי — נוצרים על ידי אדמין)
-export const dbEvents = new Store('events', {
+export const dbEvents = new Store('managerEvents', {
   schema: {
     title: schema.string(),
     description: schema.string(),
@@ -82,7 +83,7 @@ export const dbEvents = new Store('events', {
 });
 
 // התקדמות אירועים לכל משתמש
-export const dbEventProgress = new Store('eventProgress', {
+export const dbEventProgress = new Store('managerEventProgress', {
   schema: {
     userId: schema.userId(),
     eventId: schema.string(),
@@ -98,7 +99,7 @@ export const dbEventProgress = new Store('eventProgress', {
 });
 
 // חברות
-export const dbFriends = new Store('friends', {
+export const dbFriends = new Store('managerFriends', {
   schema: {
     fromUserId: schema.userId(),
     toUserId: schema.userId(),
@@ -116,7 +117,7 @@ export const dbFriends = new Store('friends', {
 });
 
 // אתגרי 1v1
-export const dbChallenges = new Store('challenges', {
+export const dbChallenges = new Store('managerChallenges', {
   schema: {
     fromUserId: schema.userId(),
     toUserId: schema.userId(),
