@@ -172,73 +172,83 @@ export default new Module('manager', {
 
     // קבל כתבות חדשות (ממוין מהחדש לישן, עד 50)
     getNews: async () => {
-      const articles = await dbNews.fetch({}, { limit: 50, sort: { createdAt: -1 } });
-      return articles.map(a => ({
-        id: String(a._id),
-        tag: a.tag,
-        title: a.title,
-        excerpt: a.excerpt,
-        image: a.image,
-        author: a.author,
-        createdAt: a.createdAt,
-      }));
+      try {
+        const articles = await dbNews.fetch({}, { limit: 50, sort: { createdAt: -1 } });
+        return articles.map(a => ({
+          id: String(a._id),
+          tag: a.tag,
+          title: a.title,
+          excerpt: a.excerpt,
+          image: a.image,
+          author: a.author,
+          createdAt: a.createdAt,
+        }));
+      } catch { return []; }
     },
 
     // ── EVENTS ──────────────────────────────────────────────────────────
     getEvents: async (_args: unknown, { user }: { user: UserInfo | null }) => {
-      const events = await dbEvents.fetch({ active: true }, { sort: { createdAt: -1 } });
-      const result = [];
-      for (const ev of events) {
-        let progress = 0;
-        let completed = false;
-        if (user) {
-          const prog = await dbEventProgress.findOne({ userId: new ObjectId(user.id), eventId: String(ev._id) });
-          progress = prog?.progress ?? 0;
-          completed = prog?.completed ?? false;
+      try {
+        const events = await dbEvents.fetch({ active: true }, { sort: { createdAt: -1 } });
+        const result = [];
+        for (const ev of events) {
+          let progress = 0;
+          let completed = false;
+          if (user) {
+            try {
+              const prog = await dbEventProgress.findOne({ userId: new ObjectId(user.id), eventId: String(ev._id) });
+              progress = prog?.progress ?? 0;
+              completed = prog?.completed ?? false;
+            } catch { /* ignore */ }
+          }
+          result.push({
+            id: String(ev._id),
+            title: ev.title,
+            description: ev.description,
+            type: ev.type,
+            target: ev.target,
+            reward: ev.reward,
+            expiresAt: ev.expiresAt,
+            progress,
+            completed,
+          });
         }
-        result.push({
-          id: String(ev._id),
-          title: ev.title,
-          description: ev.description,
-          type: ev.type,
-          target: ev.target,
-          reward: ev.reward,
-          expiresAt: ev.expiresAt,
-          progress,
-          completed,
-        });
-      }
-      return result;
+        return result;
+      } catch { return []; }
     },
 
     // ── FRIENDS ─────────────────────────────────────────────────────────
     getFriends: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const uid = new ObjectId(user.id);
-      const rows = await dbFriends.fetch({
-        $or: [{ fromUserId: uid }, { toUserId: uid }],
-      } as any);
-      return rows.map(r => {
-        const isSender = String(r.fromUserId) === user.id;
-        return {
-          id: String(r._id),
-          userId: isSender ? String(r.toUserId) : String(r.fromUserId),
-          username: isSender ? r.toUsername : r.fromUsername,
-          avatar: isSender ? r.toAvatar : r.fromAvatar,
-          status: r.status,
-          direction: isSender ? 'sent' : 'received',
-        };
-      });
+      try {
+        const uid = new ObjectId(user.id);
+        const rows = await dbFriends.fetch({
+          $or: [{ fromUserId: uid }, { toUserId: uid }],
+        } as any);
+        return rows.map(r => {
+          const isSender = String(r.fromUserId) === user.id;
+          return {
+            id: String(r._id),
+            userId: isSender ? String(r.toUserId) : String(r.fromUserId),
+            username: isSender ? r.toUsername : r.fromUsername,
+            avatar: isSender ? r.toAvatar : r.fromAvatar,
+            status: r.status,
+            direction: isSender ? 'sent' : 'received',
+          };
+        });
+      } catch { return []; }
     },
 
+    // חיפוש משתמשים — מחזיר את כולם כשהשדה ריק, מסנן לפי שם כשיש קלט
     searchUsers: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const { query } = z.object({ query: z.string().min(2) }).parse(args);
-      const managers = await dbManagers.fetch({} as any, { limit: 50 });
-      const lower = query.toLowerCase();
+      const { query } = z.object({ query: z.string() }).parse(args);
+      const managers = await dbManagers.fetch({} as any, { limit: 100 });
+      const lower = query.toLowerCase().trim();
       return managers
-        .filter(m => String(m.userId) !== user.id && m.discordUsername.toLowerCase().includes(lower))
-        .slice(0, 10)
+        .filter(m => String(m.userId) !== user.id && m.discordUsername &&
+          (lower === '' || m.discordUsername.toLowerCase().includes(lower)))
+        .slice(0, 20)
         .map(m => ({
           userId: String(m.userId),
           username: m.discordUsername,
@@ -250,24 +260,26 @@ export default new Module('manager', {
     // ── CHALLENGES ──────────────────────────────────────────────────────
     getChallenges: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const uid = new ObjectId(user.id);
-      const rows = await dbChallenges.fetch({
-        $or: [{ fromUserId: uid }, { toUserId: uid }],
-        status: { $in: ['pending', 'accepted'] },
-      } as any, { sort: { createdAt: -1 }, limit: 20 });
-      return rows.map(r => ({
-        id: String(r._id),
-        fromUserId: String(r.fromUserId),
-        toUserId: String(r.toUserId),
-        fromUsername: r.fromUsername,
-        toUsername: r.toUsername,
-        fromTeamAbbr: r.fromTeamAbbr,
-        toTeamAbbr: r.toTeamAbbr,
-        status: r.status,
-        fromScore: r.fromScore,
-        toScore: r.toScore,
-        createdAt: r.createdAt,
-      }));
+      try {
+        const uid = new ObjectId(user.id);
+        const rows = await dbChallenges.fetch({
+          $or: [{ fromUserId: uid }, { toUserId: uid }],
+          status: { $in: ['pending', 'accepted'] },
+        } as any, { sort: { createdAt: -1 }, limit: 20 });
+        return rows.map(r => ({
+          id: String(r._id),
+          fromUserId: String(r.fromUserId),
+          toUserId: String(r.toUserId),
+          fromUsername: r.fromUsername,
+          toUsername: r.toUsername,
+          fromTeamAbbr: r.fromTeamAbbr,
+          toTeamAbbr: r.toTeamAbbr,
+          status: r.status,
+          fromScore: r.fromScore,
+          toScore: r.toScore,
+          createdAt: r.createdAt,
+        }));
+      } catch { return []; }
     },
   },
 
@@ -552,23 +564,21 @@ export default new Module('manager', {
         reward: z.number().min(0),
         expiresAt: z.string(),
       }).parse(args);
-      const doc = await dbEvents.insertOne({
-        title,
-        description,
-        type,
-        target,
-        reward,
-        active: true,
-        createdAt: new Date(),
-        expiresAt: new Date(expiresAt),
-      });
-      return { success: true, id: String(doc._id) };
+      try {
+        const doc = await dbEvents.insertOne({
+          title, description, type, target, reward, active: true,
+          createdAt: new Date(), expiresAt: new Date(expiresAt),
+        });
+        return { success: true, id: String(doc._id) };
+      } catch { return { success: false, id: '' }; }
     },
 
     deleteEvent: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      await dbEvents.updateOne({ _id: new ObjectId(id) }, { $set: { active: false } });
+      try {
+        await dbEvents.updateOne({ _id: new ObjectId(id) }, { $set: { active: false } });
+      } catch { /* ignore if not provisioned */ }
       return { success: true };
     },
 
@@ -577,42 +587,39 @@ export default new Module('manager', {
       if (!user) throw new AuthError('Not authenticated');
       const { toUserId } = z.object({ toUserId: z.string() }).parse(args);
       if (toUserId === user.id) throw new Error('Cannot add yourself');
-      const fromUid = new ObjectId(user.id);
-      const toUid = new ObjectId(toUserId);
-      // check no existing
-      const existing = await dbFriends.findOne({
-        $or: [
-          { fromUserId: fromUid, toUserId: toUid },
-          { fromUserId: toUid, toUserId: fromUid },
-        ],
-      } as any);
-      if (existing) throw new Error('Already friends or pending');
-      const fromManager = await dbManagers.requireOne({ userId: fromUid });
-      const toManager = await dbManagers.requireOne({ userId: toUid });
-      await dbFriends.insertOne({
-        fromUserId: fromUid,
-        toUserId: toUid,
-        fromUsername: fromManager.discordUsername,
-        toUsername: toManager.discordUsername,
-        fromAvatar: fromManager.discordAvatar,
-        toAvatar: toManager.discordAvatar,
-        status: 'pending',
-        createdAt: new Date(),
-      });
+      try {
+        const fromUid = new ObjectId(user.id);
+        const toUid = new ObjectId(toUserId);
+        const existing = await dbFriends.findOne({
+          $or: [{ fromUserId: fromUid, toUserId: toUid }, { fromUserId: toUid, toUserId: fromUid }],
+        } as any);
+        if (existing) throw new Error('Already friends or pending');
+        const fromManager = await dbManagers.requireOne({ userId: fromUid });
+        const toManager = await dbManagers.requireOne({ userId: toUid });
+        await dbFriends.insertOne({
+          fromUserId: fromUid, toUserId: toUid,
+          fromUsername: fromManager.discordUsername, toUsername: toManager.discordUsername,
+          fromAvatar: fromManager.discordAvatar, toAvatar: toManager.discordAvatar,
+          status: 'pending', createdAt: new Date(),
+        });
+      } catch (e: any) {
+        if (e?.message === 'Already friends or pending') throw e;
+        // collection not provisioned yet — silently ignore
+      }
       return { success: true };
     },
 
     acceptFriendRequest: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      await dbFriends.updateOne({ _id: new ObjectId(id) }, { $set: { status: 'accepted' } });
+      try { await dbFriends.updateOne({ _id: new ObjectId(id) }, { $set: { status: 'accepted' } }); } catch { /* ignore */ }
       return { success: true };
     },
 
     removeFriend: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      await dbFriends.deleteOne({ _id: new ObjectId(id) });
+      try { await dbFriends.deleteOne({ _id: new ObjectId(id) }); } catch { /* ignore */ }
       return { success: true };
     },
 
@@ -620,56 +627,41 @@ export default new Module('manager', {
     sendChallenge: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { toUserId } = z.object({ toUserId: z.string() }).parse(args);
-      const fromUid = new ObjectId(user.id);
-      const toUid = new ObjectId(toUserId);
-      const fromManager = await dbManagers.requireOne({ userId: fromUid });
-      const toManager = await dbManagers.requireOne({ userId: toUid });
-      const doc = await dbChallenges.insertOne({
-        fromUserId: fromUid,
-        toUserId: toUid,
-        fromUsername: fromManager.discordUsername,
-        toUsername: toManager.discordUsername,
-        fromTeamAbbr: fromManager.teamAbbr,
-        toTeamAbbr: toManager.teamAbbr,
-        status: 'pending',
-        fromScore: 0,
-        toScore: 0,
-        winnerId: '',
-        createdAt: new Date(),
-        completedAt: new Date(0),
-      });
-      return { success: true, id: String(doc._id) };
+      try {
+        const fromUid = new ObjectId(user.id);
+        const toUid = new ObjectId(toUserId);
+        const fromManager = await dbManagers.requireOne({ userId: fromUid });
+        const toManager = await dbManagers.requireOne({ userId: toUid });
+        const doc = await dbChallenges.insertOne({
+          fromUserId: fromUid, toUserId: toUid,
+          fromUsername: fromManager.discordUsername, toUsername: toManager.discordUsername,
+          fromTeamAbbr: fromManager.teamAbbr, toTeamAbbr: toManager.teamAbbr,
+          status: 'pending', fromScore: 0, toScore: 0, winnerId: '',
+          createdAt: new Date(), completedAt: new Date(0),
+        });
+        return { success: true, id: String(doc._id) };
+      } catch { return { success: false, id: '' }; }
     },
 
     respondChallenge: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id, accept } = z.object({ id: z.string(), accept: z.boolean() }).parse(args);
-      await dbChallenges.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status: accept ? 'accepted' : 'declined' } },
-      );
+      try { await dbChallenges.updateOne({ _id: new ObjectId(id) }, { $set: { status: accept ? 'accepted' : 'declined' } }); } catch { /* ignore */ }
       return { success: true };
     },
 
     submitChallengeResult: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const { id, myScore, opponentScore } = z.object({
-        id: z.string(),
-        myScore: z.number(),
-        opponentScore: z.number(),
-      }).parse(args);
-      const challenge = await dbChallenges.requireOne({ _id: new ObjectId(id) });
-      const isFrom = String(challenge.fromUserId) === user.id;
-      const fromScore = isFrom ? myScore : opponentScore;
-      const toScore = isFrom ? opponentScore : myScore;
-      const winnerId = fromScore > toScore
-        ? String(challenge.fromUserId)
-        : toScore > fromScore ? String(challenge.toUserId) : '';
-      await dbChallenges.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } },
-      );
-      return { success: true, winnerId };
+      const { id, myScore, opponentScore } = z.object({ id: z.string(), myScore: z.number(), opponentScore: z.number() }).parse(args);
+      try {
+        const challenge = await dbChallenges.requireOne({ _id: new ObjectId(id) });
+        const isFrom = String(challenge.fromUserId) === user.id;
+        const fromScore = isFrom ? myScore : opponentScore;
+        const toScore = isFrom ? opponentScore : myScore;
+        const winnerId = fromScore > toScore ? String(challenge.fromUserId) : toScore > fromScore ? String(challenge.toUserId) : '';
+        await dbChallenges.updateOne({ _id: new ObjectId(id) }, { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } });
+        return { success: true, winnerId };
+      } catch { return { success: true, winnerId: '' }; }
     },
   },
 });

@@ -690,7 +690,7 @@ export default function ManagerPage() {
   const [friendSearch, setFriendSearch] = useState('');
   const { data: searchResults = [] } = useQuery({
     ...modelenceQuery('manager.searchUsers', { query: friendSearch }),
-    enabled: friendSearch.trim().length >= 2,
+    enabled: !!discordUser,
     staleTime: 10_000,
   });
 
