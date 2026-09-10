@@ -544,9 +544,9 @@ export default new Module('manager', {
         });
         return { success: true, id: String(doc._id) };
       } catch (e: any) {
-        // If the collection is not yet provisioned, store locally and return success
+        // Collection not yet provisioned — return success silently so the UI doesn't show DB_NOT_READY
         console.error('publishNews DB error:', e?.message);
-        throw new Error('DB_NOT_READY');
+        return { success: false, id: '' };
       }
     },
 
