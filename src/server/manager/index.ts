@@ -219,7 +219,7 @@ export default new Module('manager', {
 
     // ── FRIENDS ─────────────────────────────────────────────────────────
     getFriends: async (_args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
+      if (!user) return [];
       try {
         const uid = new ObjectId(user.id);
         const rows = await dbFriends.fetch({
@@ -241,7 +241,7 @@ export default new Module('manager', {
 
     // חיפוש משתמשים — מחזיר את כולם כשהשדה ריק, מסנן לפי שם כשיש קלט
     searchUsers: async (args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
+      if (!user) return [];
       const { query } = z.object({ query: z.string() }).parse(args);
       const managers = await dbManagers.fetch({} as any, { limit: 100 });
       const lower = query.toLowerCase().trim();
@@ -259,7 +259,7 @@ export default new Module('manager', {
 
     // ── CHALLENGES ──────────────────────────────────────────────────────
     getChallenges: async (_args: unknown, { user }: { user: UserInfo | null }) => {
-      if (!user) throw new AuthError('Not authenticated');
+      if (!user) return [];
       try {
         const uid = new ObjectId(user.id);
         const rows = await dbChallenges.fetch({

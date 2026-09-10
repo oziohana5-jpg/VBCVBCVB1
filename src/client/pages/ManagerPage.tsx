@@ -652,6 +652,7 @@ export default function ManagerPage() {
     ...modelenceQuery('manager.getFriends'),
     staleTime: 30_000,
     enabled: !!discordUser,
+    retry: 0,
   });
 
   const sendFriendMutation = useMutation({
@@ -684,6 +685,7 @@ export default function ManagerPage() {
     ...modelenceQuery('manager.getChallenges'),
     staleTime: 20_000,
     enabled: !!discordUser,
+    retry: 0,
   });
 
   // friends search
@@ -692,6 +694,7 @@ export default function ManagerPage() {
     ...modelenceQuery('manager.searchUsers', { query: friendSearch }),
     enabled: !!discordUser,
     staleTime: 10_000,
+    retry: 0,
   });
 
   // event draft
@@ -777,7 +780,14 @@ export default function ManagerPage() {
   }, [selectedTeam]);
 
   useEffect(() => {
+    // Only active on the team-picker screen (before a team is selected)
+    if (myTeam) return;
+
     const onKeyDown = (event: KeyboardEvent) => {
+      // Don't fire when the user is typing in an input/textarea
+      const tag = (event.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
       if (event.key === 'ArrowLeft') {
         setTeamIndex(current => (current === 0 ? teamOptions.length - 1 : current - 1));
       }
@@ -791,7 +801,7 @@ export default function ManagerPage() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedTeam, teamOptions.length]);
+  }, [myTeam, selectedTeam, teamOptions.length]);
 
   const handleSelectTeam = () => {
     const target = selectedTeam ?? teamOptions[0];
