@@ -230,7 +230,7 @@ function PlayerPhoto({ player, showSearch = false }: { player: OwnedPlayer; show
   const cachedPhoto = readPhotoCache()[cacheKey];
   const fallback = fallbackPhoto(player.nameHe || player.name);
   const [src, setSrc] = useState<string>(player.photoUrl ?? cachedPhoto ?? fallback);
-  const photoQuery = useQuery({
+  const photoQuery = useQuery<{ photo: string | null }>({
     ...modelenceQuery('manager.resolvePlayerPhoto', {
       name: player.name,
       team: TEAMS.find(team => team.abbr === player.teamAbbr)?.name,

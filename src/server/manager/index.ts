@@ -75,12 +75,11 @@ export default new Module('manager', {
 
       if (team) {
         const squad = await loadProviderSquad(team, apiKey);
-      const wantedParts = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(part => part.length > 2);
-      const match = squad.find(player => {
-        const candidate = normalizeProviderName(player.name ?? '');
-        return wantedParts.some(part => candidate.includes(part)) && !!player.photo;
-      });
-
+        const wantedParts = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(part => part.length > 2);
+        const match = squad.find(player => {
+          const candidate = normalizeProviderName(player.name ?? '');
+          return wantedParts.some(part => candidate.includes(part)) && !!player.photo;
+        });
         return { photo: match?.photo ?? null };
       }
 
@@ -130,7 +129,6 @@ export default new Module('manager', {
     // קבל שוק העברות
     getTransferMarket: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      // שחקנים שהמנהל עוד לא קנה
       const myPlayers = await dbManagerPlayers.fetch({ userId: new ObjectId(user.id) });
       const myPlayerIds = new Set(myPlayers.map(p => p.playerId));
       return ISRAELI_PLAYERS
@@ -173,7 +171,7 @@ export default new Module('manager', {
     // קבל כתבות חדשות (ממוין מהחדש לישן, עד 50)
     getNews: async () => {
       try {
-        const articles = await dbNews._col().find({}).sort({ createdAt: -1 }).limit(50).toArray();
+        const articles = await (await dbNews._col()).find({}).sort({ createdAt: -1 }).limit(50).toArray();
         return articles.map((a: any) => ({
           id: String(a._id),
           tag: a.tag,
@@ -189,14 +187,17 @@ export default new Module('manager', {
     // ── EVENTS ──────────────────────────────────────────────────────────
     getEvents: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       try {
-        const events = await dbEvents._col().find({ active: true }).sort({ createdAt: -1 }).toArray();
+        const events = await (await dbEvents._col()).find({ active: true }).sort({ createdAt: -1 }).toArray();
         const result = [];
         for (const ev of events as any[]) {
           let progress = 0;
           let completed = false;
           if (user) {
             try {
-              const prog = await dbEventProgress._col().findOne({ userId: new ObjectId(user.id), eventId: String(ev._id) });
+              const prog = await (await dbEventProgress._col()).findOne({
+                userId: new ObjectId(user.id),
+                eventId: String(ev._id),
+              });
               progress = (prog as any)?.progress ?? 0;
               completed = (prog as any)?.completed ?? false;
             } catch { /* ignore */ }
@@ -222,7 +223,7 @@ export default new Module('manager', {
       if (!user) return [];
       try {
         const uid = new ObjectId(user.id);
-        const rows = await dbFriends._col().find({
+        const rows = await (await dbFriends._col()).find({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
         }).toArray() as any[];
         const otherIds = rows.map(r => {
@@ -252,26 +253,22 @@ export default new Module('manager', {
       } catch { return []; }
     },
 
-    // חיפוש משתמשים — מחזיר את כולם כשהשדה ריק, מסנן לפי שם Discord כשיש קלט
+    // חיפוש משתמשים
     searchUsers: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) return [];
       const { query } = z.object({ query: z.string() }).parse(args);
-      // fetch up to 500 so we don't miss users in a larger DB
       const managers = await dbManagers.fetch({} as any, { limit: 500 });
       const lower = query.toLowerCase().trim();
       return managers
         .filter(m => {
           if (String(m.userId) === user.id) return false;
-          // show all when query is empty (so user sees the list)
           if (lower === '') return true;
-          // match against Discord username (case-insensitive)
           const name = (m.discordUsername || '').toLowerCase();
           return name.includes(lower);
         })
         .slice(0, 20)
         .map(m => ({
           userId: String(m.userId),
-          // show discordUsername if set, otherwise fall back to userId snippet
           username: m.discordUsername || `user-${String(m.userId).slice(-5)}`,
           avatar: m.discordAvatar || '',
           teamAbbr: m.teamAbbr || '',
@@ -283,7 +280,7 @@ export default new Module('manager', {
       if (!user) return [];
       try {
         const uid = new ObjectId(user.id);
-        const rows = await dbChallenges._col().find({
+        const rows = await (await dbChallenges._col()).find({
           $or: [{ fromUserId: uid }, { toUserId: uid }],
           status: { $in: ['pending', 'accepted'] },
         }).sort({ createdAt: -1 }).limit(20).toArray() as any[];
@@ -305,8 +302,7 @@ export default new Module('manager', {
   },
 
   mutations: {
-    // Exchange Discord's PKCE authorization code on the server so the browser
-    // never has to call Discord's token endpoint directly.
+    // Exchange Discord's PKCE authorization code on the server
     exchangeDiscordCode: async (args: unknown) => {
       const { code, redirectUri, codeVerifier, clientId } = z.object({
         code: z.string().min(1),
@@ -358,7 +354,7 @@ export default new Module('manager', {
       };
     },
 
-    // יצירת מנהל חדש (בחירת קבוצה)
+    // יצירת מנהל חדש
     createManager: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { teamAbbr } = z.object({ teamAbbr: z.string() }).parse(args);
@@ -379,6 +375,7 @@ export default new Module('manager', {
         goalsFor: 0,
         goalsAgainst: 0,
         createdAt: new Date(),
+        lastSeen: new Date(),
       });
 
       return { success: true, budget: STARTING_BUDGET };
@@ -393,19 +390,16 @@ export default new Module('manager', {
       const player = getPlayerById(playerId);
       if (!player) throw new Error('Player not found');
 
-      // בדוק שהשחקן לא כבר נקנה
       const existing = await dbManagerPlayers.findOne({
         userId: new ObjectId(user.id),
         playerId,
       });
       if (existing) throw new Error('Player already in squad');
 
-      // בדוק תקציב
       if (manager.budget < player.marketValue) {
         throw new Error(`אין מספיק כסף! צריך ₪${player.marketValue.toLocaleString()} אבל יש לך רק ₪${manager.budget.toLocaleString()}`);
       }
 
-      // קנה את השחקן
       await dbManagerPlayers.insertOne({
         userId: new ObjectId(user.id),
         playerId: player.id,
@@ -425,7 +419,6 @@ export default new Module('manager', {
         isStarter: false,
       });
 
-      // הפחת מהתקציב
       const newBudget = manager.budget - player.marketValue;
       await dbManagers.updateOne(
         { userId: new ObjectId(user.id) },
@@ -446,7 +439,6 @@ export default new Module('manager', {
         playerId,
       });
 
-      // מכור ב-80% מערך השוק
       const sellPrice = Math.round(myPlayer.marketValue * 0.8);
       const newBudget = manager.budget + sellPrice;
 
@@ -484,7 +476,6 @@ export default new Module('manager', {
         isUserHome,
       });
 
-      // עדכן סטטיסטיקות
       const userScore = isUserHome ? homeScore : awayScore;
       const oppScore = isUserHome ? awayScore : homeScore;
       const won = userScore > oppScore ? 1 : 0;
@@ -525,7 +516,6 @@ export default new Module('manager', {
     },
 
     // פרסם כתבה — אדמין בלבד (knafe3)
-    // Auth is Discord-based (no Modelence session), so we verify by author name
     publishNews: async (args: unknown) => {
       const { tag, title, excerpt, image, author } = z.object({
         tag: z.string().min(1),
@@ -535,12 +525,12 @@ export default new Module('manager', {
         author: z.string(),
       }).parse(args);
 
-      // Only knafe3 may publish
       if (author.trim().toLowerCase() !== 'knafe3') {
         throw new Error('Unauthorized');
       }
 
-      const doc = await dbNews._col().insertOne({
+      const col = await dbNews._col();
+      const doc = await col.insertOne({
         tag, title, excerpt, image, author, createdAt: new Date(),
       });
       return { success: true, id: String(doc.insertedId) };
@@ -552,14 +542,13 @@ export default new Module('manager', {
       if (author.trim().toLowerCase() !== 'knafe3') {
         throw new Error('Unauthorized');
       }
-      await dbNews._col().deleteOne({ _id: new ObjectId(id) });
+      await (await dbNews._col()).deleteOne({ _id: new ObjectId(id) });
       return { success: true };
     },
 
-    // מחק את כל הנתונים של כל המשתמשים — אדמין בלבד
+    // מחק את כל הנתונים — אדמין בלבד
     resetAllData: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      // מוחק את כל הרשומות מ-3 הטבלאות
       const managers = await dbManagers.fetch({});
       for (const m of managers) {
         await dbManagers.deleteOne({ _id: m._id });
@@ -587,7 +576,8 @@ export default new Module('manager', {
         expiresAt: z.string(),
       }).parse(args);
       try {
-        const doc = await dbEvents._col().insertOne({
+        const col = await dbEvents._col();
+        const doc = await col.insertOne({
           title, description, type, target, reward, active: true,
           createdAt: new Date(), expiresAt: new Date(expiresAt),
         });
@@ -599,8 +589,11 @@ export default new Module('manager', {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
       try {
-        await dbEvents._col().updateOne({ _id: new ObjectId(id) }, { $set: { active: false } });
-      } catch { /* ignore if not provisioned */ }
+        await (await dbEvents._col()).updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { active: false } }
+        );
+      } catch { /* ignore */ }
       return { success: true };
     },
 
@@ -612,13 +605,17 @@ export default new Module('manager', {
       try {
         const fromUid = new ObjectId(user.id);
         const toUid = new ObjectId(toUserId);
-        const existing = await dbFriends._col().findOne({
-          $or: [{ fromUserId: fromUid, toUserId: toUid }, { fromUserId: toUid, toUserId: fromUid }],
+        const friendsCol = await dbFriends._col();
+        const existing = await friendsCol.findOne({
+          $or: [
+            { fromUserId: fromUid, toUserId: toUid },
+            { fromUserId: toUid, toUserId: fromUid },
+          ],
         });
         if (existing) throw new Error('Already friends or pending');
         const fromManager = await dbManagers.requireOne({ userId: fromUid });
         const toManager = await dbManagers.requireOne({ userId: toUid });
-        await dbFriends._col().insertOne({
+        await friendsCol.insertOne({
           fromUserId: fromUid, toUserId: toUid,
           fromUsername: fromManager.discordUsername, toUsername: toManager.discordUsername,
           fromAvatar: fromManager.discordAvatar, toAvatar: toManager.discordAvatar,
@@ -626,7 +623,6 @@ export default new Module('manager', {
         });
       } catch (e: any) {
         if (e?.message === 'Already friends or pending') throw e;
-        // collection not provisioned yet — silently ignore
       }
       return { success: true };
     },
@@ -634,14 +630,21 @@ export default new Module('manager', {
     acceptFriendRequest: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      try { await dbFriends._col().updateOne({ _id: new ObjectId(id) }, { $set: { status: 'accepted' } }); } catch { /* ignore */ }
+      try {
+        await (await dbFriends._col()).updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'accepted' } }
+        );
+      } catch { /* ignore */ }
       return { success: true };
     },
 
     removeFriend: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id } = z.object({ id: z.string() }).parse(args);
-      try { await dbFriends._col().deleteOne({ _id: new ObjectId(id) }); } catch { /* ignore */ }
+      try {
+        await (await dbFriends._col()).deleteOne({ _id: new ObjectId(id) });
+      } catch { /* ignore */ }
       return { success: true };
     },
 
@@ -654,7 +657,8 @@ export default new Module('manager', {
         const toUid = new ObjectId(toUserId);
         const fromManager = await dbManagers.requireOne({ userId: fromUid });
         const toManager = await dbManagers.requireOne({ userId: toUid });
-        const doc = await dbChallenges._col().insertOne({
+        const challengesCol = await dbChallenges._col();
+        const doc = await challengesCol.insertOne({
           fromUserId: fromUid, toUserId: toUid,
           fromUsername: fromManager.discordUsername, toUsername: toManager.discordUsername,
           fromTeamAbbr: fromManager.teamAbbr, toTeamAbbr: toManager.teamAbbr,
@@ -668,26 +672,43 @@ export default new Module('manager', {
     respondChallenge: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
       const { id, accept } = z.object({ id: z.string(), accept: z.boolean() }).parse(args);
-      try { await dbChallenges._col().updateOne({ _id: new ObjectId(id) }, { $set: { status: accept ? 'accepted' : 'declined' } }); } catch { /* ignore */ }
+      try {
+        await (await dbChallenges._col()).updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: accept ? 'accepted' : 'declined' } }
+        );
+      } catch { /* ignore */ }
       return { success: true };
     },
 
     submitChallengeResult: async (args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) throw new AuthError('Not authenticated');
-      const { id, myScore, opponentScore } = z.object({ id: z.string(), myScore: z.number(), opponentScore: z.number() }).parse(args);
+      const { id, myScore, opponentScore } = z.object({
+        id: z.string(),
+        myScore: z.number(),
+        opponentScore: z.number(),
+      }).parse(args);
       try {
-        const challenge = await dbChallenges._col().findOne({ _id: new ObjectId(id) }) as any;
+        const challengesCol = await dbChallenges._col();
+        const challenge = await challengesCol.findOne({ _id: new ObjectId(id) }) as any;
         if (!challenge) throw new Error('Challenge not found');
         const isFrom = String(challenge.fromUserId) === user.id;
         const fromScore = isFrom ? myScore : opponentScore;
         const toScore = isFrom ? opponentScore : myScore;
-        const winnerId = fromScore > toScore ? String(challenge.fromUserId) : toScore > fromScore ? String(challenge.toUserId) : '';
-        await dbChallenges._col().updateOne({ _id: new ObjectId(id) }, { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } });
+        const winnerId = fromScore > toScore
+          ? String(challenge.fromUserId)
+          : toScore > fromScore
+            ? String(challenge.toUserId)
+            : '';
+        await challengesCol.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'completed', fromScore, toScore, winnerId, completedAt: new Date() } }
+        );
         return { success: true, winnerId };
       } catch { return { success: true, winnerId: '' }; }
     },
 
-    // עדכון lastSeen לסטטוס אונליין — קרא אותו כל 90 שניות מהקליינט
+    // עדכון lastSeen — קרא כל 90 שניות מהקליינט
     pingOnline: async (_args: unknown, { user }: { user: UserInfo | null }) => {
       if (!user) return { success: false };
       try {
@@ -695,7 +716,7 @@ export default new Module('manager', {
           { userId: new ObjectId(user.id) },
           { $set: { lastSeen: new Date() } }
         );
-      } catch { /* ignore if not provisioned */ }
+      } catch { /* ignore */ }
       return { success: true };
     },
   },

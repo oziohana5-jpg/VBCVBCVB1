@@ -2,7 +2,6 @@ import { startApp } from 'modelence/server';
 import exampleModule from '@/server/example';
 import managerModule from '@/server/manager';
 import { createDemoUser } from '@/server/migrations/createDemoUser';
-import { provisionNewsCollection } from '@/server/migrations/provisionNewsCollection';
 
 startApp({
   modules: [exampleModule, managerModule],
@@ -16,16 +15,6 @@ startApp({
       version: 1,
       description: 'Create demo user',
       handler: createDemoUser,
-    },
-    {
-      version: 2,
-      description: 'Provision managerNews, managerEvents, managerFriends, managerChallenges collections',
-      handler: provisionNewsCollection,
-    },
-    {
-      version: 3,
-      description: 'Re-provision all manager collections (retry after getDatabase fix)',
-      handler: provisionNewsCollection,
     },
   ],
 });

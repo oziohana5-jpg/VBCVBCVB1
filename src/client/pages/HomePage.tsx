@@ -63,7 +63,7 @@ export default function HomePage() {
   const [gameKey, setGameKey] = useState(0);
   const [bindings, setBindings] = useState<KeyBindings>(() => loadBindings());
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [discordUser, setDiscordUser] = useState(() => readStoredDiscord());
+  const [discordUser, _setDiscordUser] = useState(() => readStoredDiscord());
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
   const [teamQuery, setTeamQuery] = useState('');
 

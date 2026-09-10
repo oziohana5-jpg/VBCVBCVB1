@@ -1,4 +1,7 @@
 import { Store, schema } from 'modelence/server';
+import { MongoClient, Db, Collection } from 'mongodb';
+
+// ─── Modelence Stores (provisioned normally by the framework) ────────────────
 
 // מצב מנהל - קבוצה, תקציב, שחקנים
 export const dbManagers = new Store('managers', {
@@ -7,15 +10,15 @@ export const dbManagers = new Store('managers', {
     discordId: schema.string(),
     discordUsername: schema.string(),
     discordAvatar: schema.string(),
-    teamAbbr: schema.string(),       // קבוצה שנבחרה
-    budget: schema.number(),          // תקציב בשקלים
+    teamAbbr: schema.string(),
+    budget: schema.number(),
     wins: schema.number(),
     draws: schema.number(),
     losses: schema.number(),
     goalsFor: schema.number(),
     goalsAgainst: schema.number(),
     createdAt: schema.date(),
-    lastSeen: schema.date(),         // לסטטוס אונליין/אופליין
+    lastSeen: schema.date(),
   },
   indexes: [
     { key: { userId: 1 }, unique: true },
@@ -67,24 +70,49 @@ export const dbMatchResults = new Store('matchResults', {
   ]
 });
 
-// ─── Raw MongoDB collections via the managers Store's live client ────────────
-// We DON'T create separate Modelence Stores for these collections because new
-// Stores fail with "not provisioned" on Render until the first write.
-// Instead we grab dbManagers' underlying Collection object and call .db on it
-// to get the Db, then open any collection name we want. MongoDB creates the
-// collection automatically on the first write — no provisioning needed.
+// ─── Direct MongoDB client for "unmanaged" collections ───────────────────────
+// Collections like news/events/friends/challenges are NOT Modelence Stores —
+// they're plain MongoDB collections we create ourselves. We connect with the
+// same MONGODB_URI env var that Modelence uses, but via our own MongoClient so
+// we're never blocked by the framework's provisioning lifecycle.
 
-export function rawCol(name: string) {
-  // dbManagers is always provisioned (it's the first/original Store).
-  // rawCollection() returns the underlying mongodb.Collection object.
-  // That object has a .db property (the mongodb.Db) we can reuse.
-  const managersCol = (dbManagers as any).rawCollection() as import('mongodb').Collection;
-  return managersCol.db.collection(name);
+let _client: MongoClient | null = null;
+let _db: Db | null = null;
+let _connectPromise: Promise<Db> | null = null;
+
+async function getDb(): Promise<Db> {
+  if (_db) return _db;
+  if (_connectPromise) return _connectPromise;
+
+  _connectPromise = (async () => {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error('MONGODB_URI environment variable is not set');
+
+    // Parse the database name from the URI (everything after the last '/' before '?')
+    const uriObj = new URL(uri);
+    const dbName = uriObj.pathname.replace(/^\//, '') || 'modelence';
+
+    _client = new MongoClient(uri);
+    await _client.connect();
+    _db = _client.db(dbName);
+    return _db;
+  })();
+
+  return _connectPromise;
 }
 
-// Thin typed wrappers — callers use ._col() so the collection is resolved lazily
-export const dbNews           = { _col: () => rawCol('managerNews') };
-export const dbEvents         = { _col: () => rawCol('managerEvents') };
-export const dbEventProgress  = { _col: () => rawCol('managerEventProgress') };
-export const dbFriends        = { _col: () => rawCol('managerFriends') };
-export const dbChallenges     = { _col: () => rawCol('managerChallenges') };
+// Lazy collection accessor — call col() to get a ready Collection<any>
+async function col(name: string): Promise<Collection<any>> {
+  const db = await getDb();
+  return db.collection(name);
+}
+
+// ─── Typed lazy wrappers ─────────────────────────────────────────────────────
+// Each wrapper exposes a `_col()` async method that returns the Collection.
+// Usage: `await dbNews._col()` then call MongoDB methods on it.
+
+export const dbNews           = { _col: () => col('managerNews') };
+export const dbEvents         = { _col: () => col('managerEvents') };
+export const dbEventProgress  = { _col: () => col('managerEventProgress') };
+export const dbFriends        = { _col: () => col('managerFriends') };
+export const dbChallenges     = { _col: () => col('managerChallenges') };
