@@ -289,8 +289,9 @@ export default new Module('manager', {
     },
 
     // ── CHALLENGES ──────────────────────────────────────────────────────
-    getChallenges: async (args: unknown) => {
-      const { userId } = z.object({ userId: z.string() }).parse(args);
+    getChallenges: async (_args: unknown, { user }: { user: UserInfo | null }) => {
+      if (!user) throw new AuthError('Not authenticated');
+      const userId = user.id;
       try {
         const uid = new ObjectId(userId);
         const rows = await (await dbChallenges._col()).find({

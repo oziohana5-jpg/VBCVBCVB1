@@ -676,7 +676,7 @@ export default function ManagerPage() {
   const { data: friends = [], refetch: refetchFriends } = useQuery({
     ...modelenceQuery('manager.getFriends'),
     staleTime: 30_000,
-    enabled: !!activeUser,
+    enabled: !!sessionUser,
     retry: 0,
   });
 
@@ -718,26 +718,26 @@ export default function ManagerPage() {
   const { data: challenges = [], refetch: refetchChallenges } = useQuery({
     ...modelenceQuery('manager.getChallenges'),
     staleTime: 20_000,
-    enabled: !!activeUser,
+    enabled: !!sessionUser,
     retry: 0,
     refetchInterval: 30_000,
   });
 
   // ping online every 90s
   useEffect(() => {
-    if (!activeUser) return;
+    if (!sessionUser) return;
     pingOnlineMutation.mutate({});
     const interval = setInterval(() => { pingOnlineMutation.mutate({}); }, 90_000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeUser]);
+  }, [sessionUser]);
 
   // friends search
   const [friendSearch, setFriendSearch] = useState('');
   const [friendsSubTab, setFriendsSubTab] = useState<'list'|'requests'|'search'>('list');
   const { data: searchResults = [] } = useQuery({
     ...modelenceQuery('manager.searchUsers', { query: friendSearch }),
-    enabled: !!activeUser,
+    enabled: !!sessionUser,
     staleTime: 10_000,
     retry: 0,
   });
@@ -1721,7 +1721,7 @@ export default function ManagerPage() {
             const incomingRequests = (friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending');
             const sentRequests     = (friends as any[]).filter((f: any) => f.direction === 'sent'     && f.status === 'pending');
             const acceptedFriends  = (friends as any[]).filter((f: any) => f.status === 'accepted');
-            const pendingChallenges = (challenges as any[]).filter((c: any) => c.status === 'pending' && c.toUserId === activeUser?.id);
+            const pendingChallenges = (challenges as any[]).filter((c: any) => c.status === 'pending' && c.toUserId === sessionUser?.id);
             const acceptedChallenges = (challenges as any[]).filter((c: any) => c.status === 'accepted');
 
             // Helper: compute online status colour
@@ -1749,10 +1749,11 @@ export default function ManagerPage() {
                   </h1>
                 </div>
 
-                {!activeUser ? (
+                {!sessionUser ? (
                   <div className="rounded-xl border border-[#131c27] bg-[#0c1219] p-12 text-center">
                     <UserPlus size={48} className="mx-auto mb-4 text-[#c6ff2e]/40" />
-                    <p className="text-[#5d738c] mb-2">יש להתחבר כדי להשתמש בחברים</p>
+                    <p className="text-[#5d738c] mb-2">יש להתחבר עם משתמש מייל וסיסמה כדי להשתמש בחברים</p>
+                    <button type="button" onClick={() => navigate('/login?_redirect=%2F')} className="rounded-lg bg-[#c6ff2e] px-4 py-2 text-sm font-bold text-[#070b10]">התחבר</button>
                   </div>
                 ) : (
                   <div className="space-y-5">
@@ -1793,7 +1794,7 @@ export default function ManagerPage() {
 
                     {/* ── Accepted challenge "play now" ── */}
                     {acceptedChallenges.map((c: any) => {
-                      const isFrom = c.fromUserId === activeUser?.id;
+                      const isFrom = c.fromUserId === sessionUser?.id;
                       const opponentTeamAbbr = isFrom ? c.toTeamAbbr : c.fromTeamAbbr;
                       const opponent = isFrom ? c.toUsername : c.fromUsername;
                       return (
