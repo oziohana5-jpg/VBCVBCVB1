@@ -1,5 +1,5 @@
 import { Store, schema } from 'modelence/server';
-import { Collection } from 'mongodb';
+import { MongoClient, Collection } from 'mongodb';
 
 // ─── Modelence Stores (provisioned normally by the framework) ────────────────
 
@@ -70,23 +70,44 @@ export const dbMatchResults = new Store('matchResults', {
   ]
 });
 
-// ─── Direct MongoDB access via dbManagers' live client ───────────────────────
-// We use dbManagers.getDatabase() — the OFFICIAL Modelence Store API —
-// to get the same Db instance that Modelence already uses internally.
-// This means no separate MongoClient, no extra env vars, no connection string needed.
-// getDatabase() throws "not provisioned" only if the Store hasn't been init'd yet,
-// but since dbManagers is registered in the module's stores[] array it's ALWAYS
-// ready before any query/mutation runs.
+// ─── Direct MongoDB client for unmanaged collections ─────────────────────────
+// Strategy (in order):
+//  1. Try dbManagers.getDatabase() — works after the Store is fully init'd
+//  2. Fall back to a direct MongoClient using MONGODB_URI env var
 
-function rawCol(name: string): Collection<any> {
-  // getDatabase() is the official public API — returns the mongodb.Db instance
-  const db = dbManagers.getDatabase();
-  return db.collection(name);
+let _directClient: MongoClient | null = null;
+let _directConnectPromise: Promise<MongoClient> | null = null;
+
+async function getDirectClient(): Promise<MongoClient> {
+  if (_directClient) return _directClient;
+  if (_directConnectPromise) return _directConnectPromise;
+
+  _directConnectPromise = (async () => {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error('MONGODB_URI environment variable is not set');
+    const client = new MongoClient(uri);
+    await client.connect();
+    _directClient = client;
+    console.log('[db] Direct MongoClient connected');
+    return client;
+  })();
+
+  return _directConnectPromise;
 }
 
-// Lazy collection accessor — synchronous now, no Promise needed
 async function col(name: string): Promise<Collection<any>> {
-  return rawCol(name);
+  // Try the Store's live Db first (zero overhead, same connection)
+  try {
+    const db = dbManagers.getDatabase();
+    return db.collection(name);
+  } catch {
+    // Store not yet fully provisioned — use direct client
+    const client = await getDirectClient();
+    const uri = process.env.MONGODB_URI!;
+    const uriObj = new URL(uri);
+    const dbName = uriObj.pathname.replace(/^\//, '') || 'forteenite';
+    return client.db(dbName).collection(name);
+  }
 }
 
 // ─── Typed lazy wrappers ─────────────────────────────────────────────────────
