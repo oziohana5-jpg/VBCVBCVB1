@@ -709,6 +709,7 @@ export default function ManagerPage() {
 
   // friends search
   const [friendSearch, setFriendSearch] = useState('');
+  const [friendsSubTab, setFriendsSubTab] = useState<'list'|'requests'|'search'>('list');
   const { data: searchResults = [] } = useQuery({
     ...modelenceQuery('manager.searchUsers', { query: friendSearch }),
     enabled: !!discordUser,
@@ -1660,10 +1661,6 @@ export default function ManagerPage() {
 
           {/* ══ FRIENDS ═══════════════════════════════ */}
           {tab === 'friends' && (() => {
-            // ── sub-tab state (scoped via IIFE so no extra useState at top level)
-            // We store in a ref-backed approach: use a stable key in sessionStorage
-            const [friendsSubTab, setFriendsSubTab] = React.useState<'list'|'requests'|'search'>('list');
-
             const incomingRequests = (friends as any[]).filter((f: any) => f.direction === 'received' && f.status === 'pending');
             const sentRequests     = (friends as any[]).filter((f: any) => f.direction === 'sent'     && f.status === 'pending');
             const acceptedFriends  = (friends as any[]).filter((f: any) => f.status === 'accepted');
