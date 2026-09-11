@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { modelenceMutation, modelenceQuery } from '@modelence/react-query';
 import { useSession } from 'modelence/client';
-// Logo hosted on Discord CDN
-const LOGO_URL = 'https://cdn.discordapp.com/attachments/1544362998410252342/1547265092326793226/Gemini_Generated_Image_ha7o1vha7o1vha7o.png';
+import localLogo from '@/client/assets/logo-fifa-il.png';
+
+const LOGO_URL = 'https://media.discordapp.net/attachments/1544362998410252342/1547265092326793226/Gemini_Generated_Image_ha7o1vha7o1vha7o.png?ex=6aa4c4a8&is=6aa37328&hm=f7aa8c0bd5ac255fec3016f425a976a57abad34ce568f259ebfa95e9623e383e&format=webp&quality=lossless&width=903&height=1024&';
 import {
   Home, Users, ShoppingCart, PlayCircle, Trophy,
   History, ArrowLeft, DollarSign, Inbox, Calendar,
@@ -1266,7 +1267,7 @@ export default function ManagerPage() {
         <div className="w-full max-w-3xl rounded-[22px] border border-[#1a2635] bg-[#0c1219] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.45)] text-center">
           <div className="mb-5 flex items-center justify-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-[#c6ff2e]/60 bg-[#0d1725] shadow-[0_0_25px_rgba(198,255,46,0.35)]">
-              <img src={LOGO_URL} alt="FIFA IL" className="h-full w-full object-cover logo-brand" />
+              <img src={LOGO_URL} alt="FIFA IL" onError={(event) => { event.currentTarget.src = localLogo; }} className="h-full w-full object-cover logo-brand" />
             </div>
             <div className="text-left leading-tight">
               <div className="text-[#5d738c] text-[10px] uppercase tracking-[0.28em]">FIFA IL</div>
@@ -1326,7 +1327,7 @@ export default function ManagerPage() {
 
           <div className="mb-5 flex items-center justify-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-[#c6ff2e]/60 bg-[#0d1725] shadow-[0_0_25px_rgba(198,255,46,0.35)]">
-              <img src={LOGO_URL} alt="FIFA IL" className="h-full w-full object-cover logo-brand" />
+              <img src={LOGO_URL} alt="FIFA IL" onError={(event) => { event.currentTarget.src = localLogo; }} className="h-full w-full object-cover logo-brand" />
             </div>
             <div className="text-center">
               <div className="text-[#5d738c] text-[10px] uppercase tracking-[0.28em]">FIFA IL</div>
@@ -2713,7 +2714,7 @@ function FifaLoadingScreen({ mode }: { mode: 'boot' | 'match' }) {
     <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-[#07131f]/95 backdrop-blur-md">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(30,126,242,0.3),transparent_32%),linear-gradient(135deg,#07131f,#0b2634)]" />
       <div className="relative flex w-[min(90vw,30rem)] flex-col items-center text-center">
-        <img src={LOGO_URL} alt="FIFA IL" className="logo-brand mb-6 h-28 w-auto object-contain" />
+        <img src={LOGO_URL} alt="FIFA IL" onError={(event) => { event.currentTarget.src = localLogo; }} className="logo-brand mb-6 h-28 w-auto object-contain" />
         <p className="font-heading text-xs uppercase tracking-[0.38em] text-[#67b0ff]">FIFA IL · {mode === 'boot' ? 'Match Center' : 'Match Day'}</p>
         <h2 className="mt-2 font-display text-5xl text-white">{mode === 'boot' ? 'טוען את המשחק' : 'מכינים את המגרש'}</h2>
         <div className="mt-8 h-1.5 w-full overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#c6ff2e]" /></div>
