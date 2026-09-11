@@ -2433,14 +2433,33 @@ export default function ManagerPage() {
                       </div>
                     )}
                     {liveHud.period === 'half-time' && (
-                      <div className="absolute inset-x-0 bottom-5 flex justify-center">
-                        <button
-                          type="button"
-                          onClick={() => gameRef.current?.resumeSecondHalf()}
-                          className="pointer-events-auto rounded-lg bg-[#c6ff2e] px-5 py-2.5 font-heading text-sm font-bold text-[#070b10] shadow-xl transition hover:bg-white"
-                        >
-                          המשך למחצית השנייה · A / ×
-                        </button>
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#070b10]/80 p-4 backdrop-blur-sm">
+                        <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border border-[#c6ff2e]/30 bg-[#0c1219]/95 p-5 shadow-2xl">
+                          <div className="mb-4 text-center">
+                            <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#c6ff2e]">Half-time</p>
+                            <p className="mt-1 font-display text-4xl text-white">{liveHud.homeScore} – {liveHud.awayScore}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[{ team: myTeam, players: myTeam.players.slice(1, 6) }, { team: liveOpponent, players: liveOpponent.players.slice(1, 6) }].map(({ team, players }) => (
+                              <div key={team.abbr} className="rounded-lg border border-[#1d2f44] bg-[#070b10] p-3">
+                                <div className="mb-2 flex items-center gap-2">
+                                  <TeamBadge team={team} size={28} />
+                                  <span className="truncate text-sm font-bold text-white">{team.name}</span>
+                                </div>
+                                <div className="space-y-1">
+                                  {players.map(player => <p key={player.num} className="truncate text-xs text-[#9ab7d7]">#{player.num} {player.name}</p>)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => gameRef.current?.resumeSecondHalf()}
+                            className="mt-4 w-full rounded-lg bg-[#c6ff2e] px-5 py-2.5 font-heading text-sm font-bold text-[#070b10] shadow-xl transition hover:bg-white"
+                          >
+                            המשך למחצית השנייה · A / ×
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
