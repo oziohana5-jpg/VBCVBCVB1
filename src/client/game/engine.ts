@@ -92,8 +92,11 @@ export class PitchKickGame {
   private running = false;
 
   private keys = new Set<string>();
+  private keyboardKeys = new Set<string>();
   private justPressed: string[] = [];
   private justReleased: string[] = [];
+  private gamepadKeys = new Set<string>();
+  private gamepadConnected = false;
   /** Paused (e.g. settings popup open): the loop keeps rendering the frozen
    *  frame but skips simulation + input. */
   private paused = false;
@@ -305,6 +308,8 @@ export class PitchKickGame {
     this.running = true;
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('gamepadconnected', this.onGamepadConnected);
+    window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.loop);
     this.emit();
@@ -315,6 +320,9 @@ export class PitchKickGame {
     cancelAnimationFrame(this.raf);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('gamepadconnected', this.onGamepadConnected);
+    window.removeEventListener('gamepaddisconnected', this.onGamepadDisconnected);
+    this.releaseGamepadInput();
   }
 
   /** Pause/resume the simulation (e.g. while the settings popup is open). The
@@ -328,6 +336,7 @@ export class PitchKickGame {
       this.justReleased.length = 0;
       this.chargeKey = null;
       this.chargeTime = 0;
+      this.releaseGamepadInput();
     }
   }
 
@@ -352,14 +361,87 @@ export class PitchKickGame {
     if (MOVE_KEYS.has(code) || ACTION_KEYS.has(code)) e.preventDefault();
     if (!e.repeat && ACTION_KEYS.has(code)) this.justPressed.push(code);
     this.keys.add(code);
+    this.keyboardKeys.add(code);
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
     if (this.paused) return;
     const code = this.keyRemap.get(e.code) ?? e.code;
     if (KICK_KEYS.has(code)) this.justReleased.push(code);
-    this.keys.delete(code);
+    this.keyboardKeys.delete(code);
+    if (!this.gamepadKeys.has(code)) this.keys.delete(code);
   };
+
+  private onGamepadConnected = () => {
+    this.gamepadConnected = true;
+  };
+
+  private onGamepadDisconnected = () => {
+    this.gamepadConnected = false;
+    this.releaseGamepadInput();
+  };
+
+  /** Translate the browser's standard controller layout into the same
+   *  canonical actions used by keyboard input. This covers Xbox, DualShock,
+   *  and DualSense controllers when the browser exposes the standard mapping. */
+  private pollGamepad() {
+    if (!this.gamepadConnected || typeof navigator.getGamepads !== 'function') return;
+    const pad = Array.from(navigator.getGamepads()).find(Boolean);
+    if (!pad) {
+      this.gamepadConnected = false;
+      this.releaseGamepadInput();
+      return;
+    }
+
+    const pressed = new Set<number>();
+    pad.buttons.forEach((button, index) => {
+      if (button.pressed) pressed.add(index);
+    });
+
+    const digital = new Set<string>();
+    const axisX = pad.axes[0] ?? 0;
+    const axisY = pad.axes[1] ?? 0;
+    if (axisX < -0.35) digital.add('ArrowLeft');
+    if (axisX > 0.35) digital.add('ArrowRight');
+    if (axisY < -0.35) digital.add('ArrowUp');
+    if (axisY > 0.35) digital.add('ArrowDown');
+    if (pressed.has(12)) digital.add('ArrowUp');
+    if (pressed.has(13)) digital.add('ArrowDown');
+    if (pressed.has(14)) digital.add('ArrowLeft');
+    if (pressed.has(15)) digital.add('ArrowRight');
+
+    // Standard mapping: A/Cross pass, B/Circle shoot, X/Square lob pass,
+    // Y/Triangle through ball, LB switch, RB sprint, LT contain.
+    if (pressed.has(0)) digital.add('KeyS');
+    if (pressed.has(1)) digital.add('KeyD');
+    if (pressed.has(2)) digital.add('KeyA');
+    if (pressed.has(3)) digital.add('KeyW');
+    if (pressed.has(4)) digital.add('KeyQ');
+    if (pressed.has(5)) digital.add('KeyE');
+    if (pressed.has(6)) digital.add('KeyC');
+
+    for (const code of digital) {
+      if (!this.gamepadKeys.has(code)) {
+        if (ACTION_KEYS.has(code)) this.justPressed.push(code);
+        this.keys.add(code);
+        this.gamepadKeys.add(code);
+      }
+    }
+    for (const code of [...this.gamepadKeys]) {
+      if (digital.has(code)) continue;
+      if (KICK_KEYS.has(code)) this.justReleased.push(code);
+      if (!this.keyboardKeys.has(code)) this.keys.delete(code);
+      this.gamepadKeys.delete(code);
+    }
+  }
+
+  private releaseGamepadInput() {
+    for (const code of this.gamepadKeys) {
+      if (KICK_KEYS.has(code)) this.justReleased.push(code);
+      this.keys.delete(code);
+    }
+    this.gamepadKeys.clear();
+  }
 
   // ---- helpers ------------------------------------------------------------
 
@@ -610,6 +692,9 @@ export class PitchKickGame {
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (dt > 0.05) dt = 0.05;
+
+    this.pollGamepad();
+
 
     if (!this.paused) {
       this.update(dt * this.timeScale);

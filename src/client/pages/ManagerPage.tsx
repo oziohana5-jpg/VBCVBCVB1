@@ -9,7 +9,7 @@ import {
   Home, Users, ShoppingCart, PlayCircle, Trophy,
   History, ArrowLeft, DollarSign, Inbox, Calendar,
   Star, Search, Activity, ChevronRight, X, Check, LayoutGrid,
-  Newspaper, Plus, Trash2, UserPlus, Swords, Zap, FastForward,
+  Newspaper, Plus, Trash2, UserPlus, Swords, Zap, FastForward, Gamepad2,
 } from 'lucide-react';
 import { PitchKickGame, CANVAS_W, CANVAS_H, type HudState } from '@/client/game/engine';
 import { TEAMS, ISRAELI_TEAMS, type TeamData } from '@/client/game/teams';
@@ -1042,7 +1042,7 @@ export default function ManagerPage() {
 
   const handleGoToGame = () => {
     setTab('match');
-    handleStartLiveMatch();
+    handleStartLiveMatch(false);
   };
 
   const handlePlayAI = useCallback(() => {
@@ -1387,6 +1387,47 @@ export default function ManagerPage() {
     );
     setTab(nextTab);
   };
+
+  // FIFA-style manager navigation: D-pad/left stick changes tabs and A/Cross
+  // opens the selected tab or starts the match. The active match owns the
+  // controller polling through PitchKickGame.
+  useEffect(() => {
+    if (liveStarted || typeof navigator.getGamepads !== 'function') return;
+    let frame = 0;
+    let lastMove = 0;
+    let previousButtons = new Set<number>();
+
+    const poll = (now: number) => {
+      const pad = Array.from(navigator.getGamepads()).find(Boolean);
+      if (pad) {
+        const pressed = new Set<number>();
+        pad.buttons.forEach((button, index) => {
+          if (button.pressed) pressed.add(index);
+        });
+        const horizontal =
+          pressed.has(14) || (pad.axes[0] ?? 0) < -0.45 ? -1 :
+          pressed.has(15) || (pad.axes[0] ?? 0) > 0.45 ? 1 : 0;
+        const shoulder = pressed.has(4) ? -1 : pressed.has(5) ? 1 : 0;
+        const direction = shoulder || horizontal;
+        if (direction && now - lastMove > 220) {
+          const current = TAB_ORDER.indexOf(tab);
+          changeTab(TAB_ORDER[(current + direction + TAB_ORDER.length) % TAB_ORDER.length]);
+          lastMove = now;
+        }
+
+        if (pressed.has(0) && !previousButtons.has(0) && tab === 'match') {
+          handleStartLiveMatch(false);
+        }
+        previousButtons = pressed;
+      } else {
+        previousButtons.clear();
+      }
+      frame = requestAnimationFrame(poll);
+    };
+
+    frame = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(frame);
+  }, [liveStarted, tab, handleStartLiveMatch]);
 
   // ── Main layout ───────────────────────────────
   return (
@@ -2266,7 +2307,7 @@ export default function ManagerPage() {
                   <h2 className="font-heading text-2xl text-white mb-2">מוכן לשחק?</h2>
                   <p className="text-[#5d738c] mb-6">המשחק יופיע כאן, באותו דף של הניהול, בלי לעבור למסך נפרד.</p>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                    <button onClick={() => handleStartLiveMatch()}
+                    <button onClick={() => handleStartLiveMatch(false)}
                       className="px-8 py-3 rounded-lg font-heading uppercase tracking-wider text-lg font-bold"
                       style={{ background: '#c6ff2e', color: '#070b10' }}>
                       ▶ התחל משחק
@@ -2284,6 +2325,10 @@ export default function ManagerPage() {
                     <span className="text-[#5d738c] text-xs">מהירות משחק</span>
                     <input type="range" min="1" max="3" step="0.5" value={gameSpeed} onChange={(e) => setGameSpeed(Number(e.target.value))} className="accent-[#c6ff2e]" />
                     <span className="text-[#c6ff2e] text-xs font-bold">{gameSpeed.toFixed(1)}x</span>
+                  </div>
+                  <div className="mt-5 flex items-center justify-center gap-2 text-xs text-[#8295ab]">
+                    <Gamepad2 size={16} className="text-[#c6ff2e]" />
+                    <span>שלט מחובר? לחץ A / × כדי להתחיל · D-pad או LB/RB למעבר בין מסכים</span>
                   </div>
                 </div>
               ) : (
@@ -2330,6 +2375,15 @@ export default function ManagerPage() {
                           {option.label}
                         </button>
                       ))}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-[#8295ab]">
+                      <span className="inline-flex items-center gap-1.5"><Gamepad2 size={14} className="text-[#c6ff2e]" /> שלט פעיל</span>
+                      <span>LS / D-pad תנועה</span>
+                      <span>A / × מסירה</span>
+                      <span>B / ○ בעיטה</span>
+                      <span>X / □ מסירה ארוכה</span>
+                      <span>Y / △ עומק</span>
+                      <span>RB ריצה</span>
                     </div>
                     {/* Skip to 80' + AI toggle */}
                     <div className="mt-2 flex items-center justify-center gap-3">
