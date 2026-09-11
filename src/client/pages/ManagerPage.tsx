@@ -10,16 +10,17 @@ import {
   History, ArrowLeft, DollarSign, Inbox, Calendar,
   Star, Search, Activity, ChevronRight, X, Check, LayoutGrid,
   Newspaper, Plus, Trash2, UserPlus, Swords, Zap, FastForward, Gamepad2,
+  Sparkles, Wifi, PackageOpen, LockKeyhole, UsersRound,
 } from 'lucide-react';
 import { PitchKickGame, CANVAS_W, CANVAS_H, type HudState } from '@/client/game/engine';
 import { matchAudio } from '@/client/game/matchAudio';
 import { TEAMS, ISRAELI_TEAMS, type TeamData } from '@/client/game/teams';
 import { roleForIndex } from '@/client/game/teams/types';
 
-type Tab = 'home' | 'squad' | 'lineup' | 'transfer' | 'match' | 'league' | 'results' | 'news' | 'friends' | 'events';
+type Tab = 'home' | 'squad' | 'lineup' | 'transfer' | 'match' | 'ultimate' | 'online' | 'league' | 'results' | 'news' | 'friends' | 'events';
 type MarketCategory = 'ALL' | 'ISRAELI' | 'WORLD';
 
-const TAB_ORDER: Tab[] = ['home', 'squad', 'lineup', 'transfer', 'match', 'league', 'results', 'news', 'friends', 'events'];
+const TAB_ORDER: Tab[] = ['home', 'squad', 'lineup', 'transfer', 'match', 'ultimate', 'online', 'league', 'results', 'news', 'friends', 'events'];
 
 interface OwnedPlayer {
   id: string;
@@ -487,6 +488,13 @@ export default function ManagerPage() {
     return Math.max(0, teamOptions.findIndex(team => team.abbr === initial));
   });
   const [tab, setTab]                 = useState<Tab>('match');
+  const [loadingScreen, setLoadingScreen] = useState<'boot' | 'match' | null>('boot');
+  const [ultimateCards, setUltimateCards] = useState<OwnedPlayer[]>(() => MARKET_PLAYERS.slice(0, 5));
+  const [ultimateCoins, setUltimateCoins] = useState(12_500);
+  const [ultimateStage, setUltimateStage] = useState(2);
+  const [ultimatePackOpen, setUltimatePackOpen] = useState(false);
+  const [onlineSearching, setOnlineSearching] = useState(false);
+  const [onlinePlayers, setOnlinePlayers] = useState(13);
   const [tabDirection, setTabDirection] = useState<'next' | 'previous'>('next');
   const [budget, setBudget]           = useState(() => {
     try { const v = localStorage.getItem(STORAGE_KEYS.budget); return v ? Number(v) : 10_000_000; } catch { return 10_000_000; }
@@ -503,10 +511,11 @@ export default function ManagerPage() {
     enabled: !!sessionUser,
     retry: 0,
   });
+  const profile = managerProfile as { discordUsername?: string; discordAvatar?: string } | undefined;
   const accountUser = sessionUser ? {
     id: String((sessionUser as any).id),
-    username: managerProfile?.discordUsername || (sessionUser as any).handle || (sessionUser as any).email || 'שחקן',
-    avatar: managerProfile?.discordAvatar || '',
+    username: profile?.discordUsername || (sessionUser as any).handle || (sessionUser as any).email || 'שחקן',
+    avatar: profile?.discordAvatar || '',
   } : null;
   const activeUser = discordUser ?? accountUser;
 
@@ -618,6 +627,18 @@ export default function ManagerPage() {
     excerpt: '',
     image: '',
   });
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setLoadingScreen(null), loadingScreen === 'boot' ? 1800 : 1200);
+    return () => window.clearTimeout(timeout);
+  }, [loadingScreen]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setOnlinePlayers((count) => Math.max(9, Math.min(24, count + (Math.random() > 0.5 ? 1 : -1))));
+    }, 4500);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!myTeam || squad.length >= 11) return;
@@ -1030,6 +1051,7 @@ export default function ManagerPage() {
 
   const handleStartLiveMatch = useCallback((automatic = aiMatch) => {
     if (!myTeam) return;
+    setLoadingScreen('match');
     const opponentPool = TEAMS.filter((team) => team.abbr !== myTeam.abbr);
     const opponent = opponentPool[Math.floor(Math.random() * opponentPool.length)] ?? TEAMS[0];
     setLiveOpponent(opponent);
@@ -1195,6 +1217,47 @@ export default function ManagerPage() {
     const matchName = p.nameHe.includes(searchTerm) || p.name.toLowerCase().includes(searchTerm.toLowerCase());
     return notOwned && matchPos && matchCategory && matchName;
   });
+
+  // FIFA-style manager navigation: D-pad/left stick changes tabs and A/Cross
+  // opens the selected tab or starts the match. The active match owns the
+  // controller polling through PitchKickGame.
+  useEffect(() => {
+    if (liveStarted || typeof navigator.getGamepads !== 'function') return;
+    let frame = 0;
+    let lastMove = 0;
+    let previousButtons = new Set<number>();
+
+    const poll = (now: number) => {
+      const pad = Array.from(navigator.getGamepads()).find(Boolean);
+      if (pad) {
+        const pressed = new Set<number>();
+        pad.buttons.forEach((button, index) => {
+          if (button.pressed) pressed.add(index);
+        });
+        const horizontal =
+          pressed.has(14) || (pad.axes[0] ?? 0) < -0.45 ? -1 :
+          pressed.has(15) || (pad.axes[0] ?? 0) > 0.45 ? 1 : 0;
+        const shoulder = pressed.has(4) ? -1 : pressed.has(5) ? 1 : 0;
+        const direction = shoulder || horizontal;
+        if (direction && now - lastMove > 220) {
+          const current = TAB_ORDER.indexOf(tab);
+          changeTab(TAB_ORDER[(current + direction + TAB_ORDER.length) % TAB_ORDER.length]);
+          lastMove = now;
+        }
+
+        if (pressed.has(0) && !previousButtons.has(0) && tab === 'match') {
+          handleStartLiveMatch(false);
+        }
+        previousButtons = pressed;
+      } else {
+        previousButtons.clear();
+      }
+      frame = requestAnimationFrame(poll);
+    };
+
+    frame = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(frame);
+  }, [liveStarted, tab, handleStartLiveMatch]);
 
   // ── Team Picker ───────────────────────────────
   if (!activeUser) {
@@ -1381,6 +1444,8 @@ export default function ManagerPage() {
     { id: 'lineup',   icon: LayoutGrid,   label: 'הרכב',        badge: 0 },
     { id: 'transfer', icon: ShoppingCart, label: 'העברות',      badge: 0 },
     { id: 'match',    icon: PlayCircle,   label: 'יום משחק',    badge: 0 },
+    { id: 'ultimate', icon: Sparkles,     label: 'Ultimate',    badge: 1 },
+    { id: 'online',   icon: Wifi,         label: 'אונליין',     badge: onlinePlayers },
     { id: 'league',   icon: Trophy,       label: 'טבלה',        badge: 0 },
     { id: 'results',  icon: History,      label: 'תוצאות',      badge: 0 },
     { id: 'news',     icon: Newspaper,    label: 'עדכוני FIFA', badge: newsArticles.length },
@@ -1396,47 +1461,6 @@ export default function ManagerPage() {
     setTab(nextTab);
   };
 
-  // FIFA-style manager navigation: D-pad/left stick changes tabs and A/Cross
-  // opens the selected tab or starts the match. The active match owns the
-  // controller polling through PitchKickGame.
-  useEffect(() => {
-    if (liveStarted || typeof navigator.getGamepads !== 'function') return;
-    let frame = 0;
-    let lastMove = 0;
-    let previousButtons = new Set<number>();
-
-    const poll = (now: number) => {
-      const pad = Array.from(navigator.getGamepads()).find(Boolean);
-      if (pad) {
-        const pressed = new Set<number>();
-        pad.buttons.forEach((button, index) => {
-          if (button.pressed) pressed.add(index);
-        });
-        const horizontal =
-          pressed.has(14) || (pad.axes[0] ?? 0) < -0.45 ? -1 :
-          pressed.has(15) || (pad.axes[0] ?? 0) > 0.45 ? 1 : 0;
-        const shoulder = pressed.has(4) ? -1 : pressed.has(5) ? 1 : 0;
-        const direction = shoulder || horizontal;
-        if (direction && now - lastMove > 220) {
-          const current = TAB_ORDER.indexOf(tab);
-          changeTab(TAB_ORDER[(current + direction + TAB_ORDER.length) % TAB_ORDER.length]);
-          lastMove = now;
-        }
-
-        if (pressed.has(0) && !previousButtons.has(0) && tab === 'match') {
-          handleStartLiveMatch(false);
-        }
-        previousButtons = pressed;
-      } else {
-        previousButtons.clear();
-      }
-      frame = requestAnimationFrame(poll);
-    };
-
-    frame = requestAnimationFrame(poll);
-    return () => cancelAnimationFrame(frame);
-  }, [liveStarted, tab, handleStartLiveMatch]);
-
   // ── Main layout ───────────────────────────────
   return (
     <div className="min-h-screen bg-[#070b10] flex" dir="rtl">
@@ -1447,6 +1471,8 @@ export default function ManagerPage() {
           {toast}
         </div>
       )}
+
+      {loadingScreen && <FifaLoadingScreen mode={loadingScreen} />}
 
       {/* ── Sidebar ──────────────────────────── */}
       <aside className="w-60 bg-[#0c1219] border-l border-[#131c27] flex flex-col shrink-0">
@@ -2521,6 +2547,51 @@ export default function ManagerPage() {
             </div>
           )}
 
+          {/* ══ ULTIMATE ══════════════════════════════ */}
+          {tab === 'ultimate' && (
+            <div className="space-y-6">
+              <div className="relative overflow-hidden rounded-3xl border border-[#315a43] bg-[linear-gradient(135deg,#102d27,#0b121b_62%,#1b3e63)] p-6 sm:p-8">
+                <div className="absolute -left-12 -top-16 h-48 w-48 rounded-full border border-[#c6ff2e]/20" />
+                <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-end">
+                  <div>
+                    <p className="mb-2 flex items-center gap-2 font-heading text-xs uppercase tracking-[0.3em] text-[#c6ff2e]"><Sparkles size={15} /> FIFA IL Ultimate</p>
+                    <h1 className="font-display text-6xl leading-none text-white">בנה את <span className="text-[#c6ff2e]">האגדה</span></h1>
+                    <p className="mt-3 max-w-xl text-sm text-[#b7d5cb]">אסוף קלפים, בנה הרכב, ועבור שלבים מול יריבות שהולכות ומתחזקות.</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-xs text-[#8fb4ac]">מטבעות</p><p className="font-display text-3xl text-white">{ultimateCoins.toLocaleString()}</p></div>
+                    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-xs text-[#8fb4ac]">שלב נוכחי</p><p className="font-display text-3xl text-[#c6ff2e]">{ultimateStage}/12</p></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1fr_0.72fr]">
+                <section className="rounded-2xl border border-[#131c27] bg-[#0c1219] p-5">
+                  <div className="mb-4 flex items-center justify-between"><div><p className="font-heading text-xs uppercase tracking-[0.25em] text-[#5d738c]">הקבוצה שלך</p><h2 className="font-display text-4xl text-white">ההרכב הראשון</h2></div><span className="text-sm text-[#c6ff2e]">{ultimateCards.length}/11 קלפים</span></div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                    {ultimateCards.map((player) => <UltimatePlayerCard key={player.id} player={player} />)}
+                  </div>
+                </section>
+                <section className="rounded-2xl border border-[#315a43] bg-[linear-gradient(160deg,#143c2b,#0c1219)] p-5">
+                  <div className="flex items-start justify-between"><div><p className="font-heading text-xs uppercase tracking-[0.25em] text-[#c6ff2e]">פרס שלב {ultimateStage}</p><h2 className="font-display text-4xl text-white">הדרך לגמר</h2></div><Trophy className="text-[#c6ff2e]" /></div>
+                  <div className="mt-5 space-y-3">{['מוקדמות', 'שמינית הגמר', 'רבע הגמר', 'הגמר הגדול'].map((label, index) => <div key={label} className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${index < ultimateStage - 1 ? 'border-[#c6ff2e]/30 bg-[#c6ff2e]/10' : index === ultimateStage - 1 ? 'border-[#c6ff2e] bg-[#c6ff2e]/15' : 'border-white/10 bg-black/10'}`}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/25 text-xs text-white">{index < ultimateStage - 1 ? '✓' : index + 1}</span><span className="flex-1 text-sm text-white">{label}</span>{index > ultimateStage - 1 && <LockKeyhole size={14} className="text-[#5d738c]" />}</div>)}</div>
+                  <button onClick={() => { setUltimateStage((stage) => Math.min(12, stage + 1)); setUltimateCoins((coins) => coins + 750); showToast('ניצחת! קיבלת 750 מטבעות'); }} className="mt-5 w-full rounded-xl bg-[#c6ff2e] px-4 py-3 font-heading font-bold text-[#070b10] transition hover:bg-white">שחק את המשחק הבא</button>
+                </section>
+              </div>
+
+              <section className="rounded-2xl border border-[#26384b] bg-[#0c1219] p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><p className="font-heading text-xs uppercase tracking-[0.25em] text-[#5d738c]">חנות קלפים</p><h2 className="font-display text-4xl text-white">חבילת כוכבים</h2></div><button onClick={() => { setUltimatePackOpen(true); setUltimateCoins((coins) => Math.max(0, coins - 750)); }} disabled={ultimateCoins < 750} className="flex items-center justify-center gap-2 rounded-xl border border-[#c6ff2e]/60 px-4 py-3 font-heading text-sm font-bold text-[#c6ff2e] transition hover:bg-[#c6ff2e]/10 disabled:cursor-not-allowed disabled:opacity-40"><PackageOpen size={17} /> פתח חבילה · 750</button></div>{ultimatePackOpen && <div className="mt-4 grid gap-3 rounded-xl border border-[#c6ff2e]/30 bg-[#c6ff2e]/10 p-4 sm:grid-cols-3">{MARKET_PLAYERS.slice(3, 6).map((player) => <button key={player.id} onClick={() => { setUltimateCards((cards) => [...cards, player].slice(-11)); setUltimatePackOpen(false); showToast(`${player.nameHe} נוסף להרכב`); }} className="text-right"><UltimatePlayerCard player={player} /></button>)}</div>}</section>
+            </div>
+          )}
+
+          {/* ══ ONLINE ════════════════════════════════ */}
+          {tab === 'online' && (
+            <div className="space-y-6">
+              <div className="rounded-3xl border border-[#1d5f76] bg-[radial-gradient(circle_at_80%_0%,#15536c,#0b121b_62%)] p-6 sm:p-8"><div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><p className="mb-2 flex items-center gap-2 font-heading text-xs uppercase tracking-[0.3em] text-[#67e8f9]"><Wifi size={15} /> FIFA IL Online</p><h1 className="font-display text-6xl leading-none text-white">משחקים <span className="text-[#67e8f9]">באמת</span></h1><p className="mt-3 max-w-xl text-sm text-[#b8d8e2]">מציאת יריב אקראי, משחק בזמן אמת, ושליטה עם שלט בלבד.</p></div><div className="flex items-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3"><span className="h-3 w-3 animate-pulse rounded-full bg-emerald-400" /><span className="font-display text-3xl text-white">{onlinePlayers}</span><span className="text-sm text-emerald-200">שחקנים אונליין</span></div></div></div>
+              <div className="grid gap-4 lg:grid-cols-3"><div className="rounded-2xl border border-[#26384b] bg-[#0c1219] p-5 lg:col-span-2"><div className="flex items-center gap-3"><UsersRound className="text-[#67e8f9]" /><div><h2 className="font-display text-4xl text-white">חיפוש יריב</h2><p className="text-sm text-[#8295ab]">המערכת תחפש שחקן ברמה דומה ובחיבור יציב.</p></div></div><div className="mt-6 flex flex-col gap-3 sm:flex-row"><button onClick={() => { setOnlineSearching(true); window.setTimeout(() => { setOnlineSearching(false); showToast('נמצא יריב! המשחק המקוון ייפתח בקרוב'); }, 2200); }} disabled={onlineSearching} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#67e8f9] px-5 py-4 font-heading font-bold text-[#071d32] transition hover:bg-white disabled:animate-pulse disabled:opacity-80">{onlineSearching ? <><Wifi size={18} /> מחפש יריב...</> : <><Swords size={18} /> מצא יריב אקראי</>}</button><div className="flex items-center justify-center gap-2 rounded-xl border border-[#26384b] px-4 py-3 text-sm text-[#9ab7d7]"><Gamepad2 size={18} className="text-[#67e8f9]" /> שלט מחובר בלבד</div></div></div><div className="rounded-2xl border border-[#26384b] bg-[#0c1219] p-5"><h3 className="font-heading text-lg text-white">מצב השירות</h3><div className="mt-4 space-y-3 text-sm"><p className="flex items-center justify-between text-[#8295ab]"><span>שרת משחק</span><span className="text-emerald-400">פעיל</span></p><p className="flex items-center justify-between text-[#8295ab]"><span>חיפוש ממוצע</span><span className="text-white">~18 שנ׳</span></p><p className="flex items-center justify-between text-[#8295ab]"><span>סוג משחק</span><span className="text-white">1 נגד 1</span></p></div></div></div>
+              <div className="flex items-center gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100"><LockKeyhole size={17} className="shrink-0 text-amber-300" /><span>אונליין אמיתי דורש חיבור שרת WebSocket. המסך הזה כבר מוכן לזרימת matchmaking, והמשחק יופעל רק לאחר ששני הצדדים מחוברים.</span></div>
+            </div>
+          )}
+
           {/* ══ LEAGUE ════════════════════════════════ */}
           {tab === 'league' && (
             <div>
@@ -2637,6 +2708,32 @@ export default function ManagerPage() {
 // ────────────────────────────────────────────────
 // PlayerCard component
 // ────────────────────────────────────────────────
+function FifaLoadingScreen({ mode }: { mode: 'boot' | 'match' }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-[#07131f]/95 backdrop-blur-md">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(30,126,242,0.3),transparent_32%),linear-gradient(135deg,#07131f,#0b2634)]" />
+      <div className="relative flex w-[min(90vw,30rem)] flex-col items-center text-center">
+        <img src={LOGO_URL} alt="FIFA IL" className="logo-brand mb-6 h-28 w-auto object-contain" />
+        <p className="font-heading text-xs uppercase tracking-[0.38em] text-[#67b0ff]">FIFA IL · {mode === 'boot' ? 'Match Center' : 'Match Day'}</p>
+        <h2 className="mt-2 font-display text-5xl text-white">{mode === 'boot' ? 'טוען את המשחק' : 'מכינים את המגרש'}</h2>
+        <div className="mt-8 h-1.5 w-full overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#c6ff2e]" /></div>
+        <p className="mt-3 text-sm text-[#8295ab]">מחבר אצטדיון, שחקנים ושידור חי...</p>
+      </div>
+    </div>
+  );
+}
+
+function UltimatePlayerCard({ player }: { player: OwnedPlayer }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-[#c6ff2e]/40 bg-[linear-gradient(160deg,#d7f58d,#779b5b_42%,#172c2d)] p-3 text-[#071d32] shadow-[0_12px_22px_rgba(0,0,0,0.25)] transition hover:-translate-y-1">
+      <div className="flex items-start justify-between"><span className="font-display text-3xl leading-none">{player.ovr}</span><span className="rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-bold">{player.position}</span></div>
+      <div className="mt-5 flex h-14 items-end justify-center"><div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/70 bg-[#183245] text-sm font-bold text-white">{player.nameHe.slice(0, 2)}</div></div>
+      <p className="mt-3 truncate text-center font-heading text-sm font-bold">{player.nameHe}</p>
+      <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[9px] font-bold"><span>PAC {player.pac}</span><span>SHO {player.sho}</span><span>DRI {player.dri}</span></div>
+    </div>
+  );
+}
+
 function PlayerCard({
   player, action, canAfford = true, onAction, onChangePosition, onUpgrade,
 }: {
