@@ -12,6 +12,7 @@ import {
   Newspaper, Plus, Trash2, UserPlus, Swords, Zap, FastForward, Gamepad2,
 } from 'lucide-react';
 import { PitchKickGame, CANVAS_W, CANVAS_H, type HudState } from '@/client/game/engine';
+import { matchAudio } from '@/client/game/matchAudio';
 import { TEAMS, ISRAELI_TEAMS, type TeamData } from '@/client/game/teams';
 import { roleForIndex } from '@/client/game/teams/types';
 
@@ -1069,6 +1070,7 @@ export default function ManagerPage() {
   useEffect(() => {
     if (!myTeam || !liveStarted || !canvasRef.current || !liveOpponent) return;
 
+    matchAudio.start();
     const game = new PitchKickGame(canvasRef.current, setLiveHud, myTeam, liveOpponent, { aiOnly: aiMatch });
     game.setTimeScale(liveSpeed);
     gameRef.current = game;
@@ -1076,9 +1078,14 @@ export default function ManagerPage() {
 
     return () => {
       game.stop();
+      matchAudio.stop();
       gameRef.current = null;
     };
   }, [myTeam, liveOpponent, liveStarted, liveKey]);
+
+  useEffect(() => {
+    matchAudio.announce(liveHud.message);
+  }, [liveHud.message]);
 
   useEffect(() => {
     gameRef.current?.setTimeScale(liveSpeed);
