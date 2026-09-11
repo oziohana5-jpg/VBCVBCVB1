@@ -52,6 +52,7 @@ export interface HudState {
   awayScore: number;
   /** In-game match seconds elapsed (counts UP, 0 -> 5400 = 90:00). */
   clock: number;
+  period: 'first-half' | 'half-time' | 'second-half' | 'full-time';
   message: string;
   possession: Team | 'none';
   /** Player currently carrying the ball, when there is an owner. */

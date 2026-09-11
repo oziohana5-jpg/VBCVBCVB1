@@ -118,6 +118,7 @@ export default function HomePage() {
     homeScore: 0,
     awayScore: 0,
     clock: 0,
+    period: 'first-half',
     message: '',
     possession: 'none',
     possessionPlayer: null,

@@ -178,6 +178,9 @@ export class PitchKickGame {
   private awayScore = 0;
   /** Real seconds of play elapsed; drives the accelerated match clock. */
   private elapsed = 0;
+  private halftime = false;
+  private secondHalf = false;
+  private halftimeTimer = 0;
   private message = '';
   private messageTimer = 0;
   private freeze = 0;
@@ -263,6 +266,16 @@ export class PitchKickGame {
   skipToMinute(displayMinute: number) {
     const clamped = Math.max(0, Math.min(90, displayMinute));
     this.elapsed = (clamped / 90) * MATCH_REAL_SECS;
+  }
+
+  /** Continue from the halftime presentation and kick off the second half. */
+  resumeSecondHalf() {
+    if (!this.halftime || this.practice) return;
+    this.halftime = false;
+    this.secondHalf = true;
+    this.halftimeTimer = 0;
+    this.setMessage('SECOND HALF', 1.5);
+    this.resetKickoff('away');
   }
 
   /** Toggle AI-only mode mid-match (all players AI-controlled vs human). */
@@ -357,6 +370,11 @@ export class PitchKickGame {
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (this.paused) return;
+    if (this.halftime && (e.code === 'Enter' || e.code === 'Space')) {
+      e.preventDefault();
+      this.justPressed.push('KeyS');
+      return;
+    }
     const code = this.keyRemap.get(e.code) ?? e.code;
     if (MOVE_KEYS.has(code) || ACTION_KEYS.has(code)) e.preventDefault();
     if (!e.repeat && ACTION_KEYS.has(code)) this.justPressed.push(code);
@@ -580,6 +598,15 @@ export class PitchKickGame {
         MATCH_DISPLAY_SECS,
         Math.floor((this.elapsed / MATCH_REAL_SECS) * MATCH_DISPLAY_SECS),
       ),
+      period: this.practice
+        ? 'first-half'
+        : this.halftime
+          ? 'half-time'
+          : this.elapsed >= MATCH_REAL_SECS
+            ? 'full-time'
+            : this.elapsed >= MATCH_REAL_SECS / 2
+              ? 'second-half'
+              : 'first-half',
       message: this.message,
       possession: this.owner ? this.owner.team : 'none',
       possessionPlayer: this.owner
@@ -781,8 +808,28 @@ export class PitchKickGame {
       return;
     }
 
+    if (this.halftime) {
+      this.halftimeTimer -= dt;
+      if (this.justPressed.includes('KeyS') || this.halftimeTimer <= 0) {
+        this.resumeSecondHalf();
+      }
+      this.justPressed = [];
+      this.justReleased = [];
+      return;
+    }
+
     if (!this.practice && this.elapsed < MATCH_REAL_SECS) {
       this.elapsed += dt;
+      if (!this.secondHalf && this.elapsed >= MATCH_REAL_SECS / 2) {
+        this.elapsed = MATCH_REAL_SECS / 2;
+        this.halftime = true;
+        this.halftimeTimer = 8;
+        this.setMessage('HALF TIME — PRESS A / SPACE TO CONTINUE', 8);
+        this.freeze = 0;
+        this.justPressed = [];
+        this.justReleased = [];
+        return;
+      }
       if (this.elapsed >= MATCH_REAL_SECS) {
         this.elapsed = MATCH_REAL_SECS;
         const verdict =

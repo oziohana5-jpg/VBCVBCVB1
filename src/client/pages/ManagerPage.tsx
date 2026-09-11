@@ -653,6 +653,7 @@ export default function ManagerPage() {
     homeScore: 0,
     awayScore: 0,
     clock: 0,
+    period: 'first-half',
     message: '',
     possession: 'none',
     possessionPlayer: null,
@@ -2429,6 +2430,17 @@ export default function ManagerPage() {
                         <span className="font-display text-6xl sm:text-7xl text-volt-500 drop-shadow-[0_4px_0_rgba(0,0,0,0.6)] animate-pop tracking-wider text-center px-6">
                           {liveHud.message}
                         </span>
+                      </div>
+                    )}
+                    {liveHud.period === 'half-time' && (
+                      <div className="absolute inset-x-0 bottom-5 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => gameRef.current?.resumeSecondHalf()}
+                          className="pointer-events-auto rounded-lg bg-[#c6ff2e] px-5 py-2.5 font-heading text-sm font-bold text-[#070b10] shadow-xl transition hover:bg-white"
+                        >
+                          המשך למחצית השנייה · A / ×
+                        </button>
                       </div>
                     )}
                   </div>
